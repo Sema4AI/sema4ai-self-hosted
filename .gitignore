@@ -1,6 +1,10 @@
 # Local .terraform directories
 .terraform/
 
+# Rendered values files contain credentials — never commit. No leading slash,
+# so this matches a rendered/ directory at any depth (every platform folder).
+rendered/
+
 # .tfstate files
 *.tfstate
 *.tfstate.*

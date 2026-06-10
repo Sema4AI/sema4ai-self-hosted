@@ -12,7 +12,7 @@ Resources are organized by platform version, then by target environment:
 
 ```
 v2.5/
-  aws/      Reference materials for deploying on AWS (coming soon)
+  aws/      Reference materials for deploying on AWS
   azure/    Reference materials for deploying on Azure (coming soon)
 ```
 

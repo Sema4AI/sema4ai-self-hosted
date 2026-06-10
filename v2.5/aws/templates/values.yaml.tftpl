@@ -1,0 +1,85 @@
+# Helm values for the Sema4.ai self-hosted deployment "${deployment_id}".
+#
+# Rendered by Terraform from templates/values.yaml.tftpl. The deployment is
+# triggered from the Sema4 Enterprise portal at https://get.sema4.ai, which
+# needs this values file during setup.
+#
+# SETUP CANNOT PROCEED UNTIL THIS FILE IS COMPLETELY FILLED IN. Fields known to
+# this infrastructure are pre-filled; replace every remaining REPLACE_ME before
+# starting the setup.
+#
+# Also required before setup: the namespace, the service account below, and
+# its binding to an IAM role with the application access policy attached
+# (terraform output app_policy_arn) — all part of your compute configuration;
+# see README.md.
+
+# Service account the application pods run as. YOU create it (and its
+# namespace) and bind it to your application IAM role before setup, so the
+# whole identity chain is in place — with EKS Pod Identity via an association
+# (no annotations on the SA), with IRSA via the role-arn annotation.
+serviceAccount:
+  create: false
+  name: ${deployment_id}-app
+
+# Ingress is YOUR responsibility (see README.md, shared responsibility). The
+# application serves plain HTTP on port 8001 with a /health/live probe; expose
+# it with your ingress controller / load balancer and terminate TLS there.
+# Example for a controller that routes to ClusterIP services:
+#
+# service:
+#   type: ClusterIP
+#
+# ingress:
+#   enabled: true
+#   className: REPLACE_ME
+#   hosts:
+#     - host: REPLACE_ME
+#       paths:
+#         - path: /
+#           pathType: Prefix
+#           port: http
+
+config:
+  infrastructurePlatform: 'aws'
+
+  # ---- Pre-filled by Terraform from this infrastructure ----
+  aws:
+    region: '${aws_region}'
+    s3BucketName: '${s3_bucket_name}'
+    kmsKeyArn: '${kms_key_arn}'
+    # This deployment's key prefix in the bucket. When the bucket is shared by
+    # multiple deployments, each MUST be configured with its own prefix.
+    s3KeyPrefix: '${s3_key_prefix}'
+
+  # PostgreSQL connection. Pre-filled when the optional Aurora database is
+  # enabled; otherwise point these at your own PostgreSQL 17 (the uuid-ossp
+  # extension must be available). The application creates the database itself
+  # on first start if it does not exist.
+  postgres:
+    host: '${postgres_host}'
+    port: '${postgres_port}'
+    user: '${postgres_user}'
+    # Preserved from the existing deployment if omitted — after initial setup
+    # you may remove this line, e.g. to keep this file in version control.
+    password: '${postgres_password}'
+    database: '${postgres_database}'
+
+  # Public base URL of this deployment (drives the OAuth callback and MCP
+  # public-API base URLs). Must match the hostname your ingress serves.
+  externalUrl: 'REPLACE_ME'
+
+  # authMode defaults to 'oidc' in the chart.
+  workroom:
+    # Your OIDC client. Register the redirect URI
+    # <externalUrl>/oidc/login/callback with your identity provider, then fill
+    # these three.
+    oidcClientId: 'REPLACE_ME'
+    # Preserved from the existing deployment if omitted — after initial setup
+    # you may remove this line, e.g. to keep this file in version control.
+    oidcClientSecret: 'REPLACE_ME'
+    # Full URL of your OIDC server, with or without the
+    # /.well-known/openid-configuration suffix. Examples:
+    #   Entra ID: https://login.microsoftonline.com/<tenant-id>/v2.0
+    #   Okta:     https://<your-domain>.okta.com/oauth2/default
+    #   Auth0:    https://<your-tenant>.us.auth0.com
+    oidcServer: 'REPLACE_ME'
