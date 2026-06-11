@@ -1,7 +1,8 @@
-# Aurora Serverless v2 PostgreSQL. Per-instance databases/users/uuid-ossp are
-# NOT created here (the app creates its own database on first start); see the
-# root module. Set publicly_accessible (with public subnet_ids) to reach the
-# cluster from the internet as well as from inside the VPC.
+# Aurora Serverless v2 PostgreSQL. Per-deployment databases/users/uuid-ossp
+# are NOT created here — the operator creates each deployment's database
+# before setup; see the root README. Set publicly_accessible (with public
+# subnet_ids) to reach the cluster from the internet as well as from inside
+# the VPC.
 
 # Determine the VPC ID from the first subnet.
 # All subnets are expected to be in the same VPC.
