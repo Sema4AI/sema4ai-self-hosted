@@ -43,13 +43,16 @@ scope and deployed as part of the compute configuration.
   configuration: the IAM role with the trust policy your platform needs (EKS
   Pod Identity, ECS/Fargate task role, EC2 instance profile, IRSA) and this
   project's access policy attached, the namespace and service account the
-  application runs as, and the binding between them (see step 3 below).
+  application runs as, and the binding between them (see step 4 below).
 - **Ingress** — exposing the application (load balancer, ingress controller,
   TLS certificates, DNS). The application serves plain HTTP on port 8001 with
   a `/health/live` probe; terminate TLS in your ingress.
 - An **OIDC identity provider** and a client registration for the application.
 - **PostgreSQL 17**, unless you enable the optional Aurora module here — and
-  even then, operating it (backups, upgrades, access control) is yours.
+  even then, operating it (backups, upgrades, access control) is yours. The
+  `uuid-ossp` and `plpgsql` extensions must be available — the application
+  enables them itself on first start, so its database user must be able to
+  run `CREATE EXTENSION`.
 
 ## What this creates
 
@@ -62,12 +65,12 @@ scope and deployed as part of the compute configuration.
 3. An **IAM policy** granting access to exactly that bucket and key. The
    application IAM *role* is deliberately not created here — a role cannot
    exist without a trust policy, and trust is compute-specific — so you create
-   the role in your compute configuration and attach this policy (step 3
+   the role in your compute configuration and attach this policy (step 4
    below).
 4. **Optional** (`create_database = true`): an **Aurora Serverless v2
    PostgreSQL 17** cluster in subnets you supply, encrypted with the KMS key.
-   The application creates its own database on first start, so no manual
-   bootstrap is needed.
+   The cluster is created empty — you create each deployment's database
+   yourself before setup (step 3 below).
 5. A **rendered Helm values file per deployment**
    (`rendered/values-<deployment>.yaml`) with everything this project knows
    pre-filled; the remaining `REPLACE_ME` fields (service exposure,
@@ -93,8 +96,8 @@ The configuration has two constructs:
 
 What is shared and what is per-deployment:
 
-- Each deployment gets its **own PostgreSQL database** (created by the
-  application on first start). Note that the rendered values files all carry
+- Each deployment gets its **own PostgreSQL database** (created by you
+  before setup, step 3 below). Note that the rendered values files all carry
   the same cluster-level credentials, so this separates data but does not
   enforce isolation on its own — create deployment-specific database users
   for that (see the note above).
@@ -144,7 +147,19 @@ preserved by later deploys that omit it, so after the initial setup you can
 remove `postgres.password` and `oidcClientSecret` and keep the file in
 version control if desired.
 
-### 3. Create the application identity: IAM role, service account, binding
+### 3. Create the application database (per deployment)
+
+The application does **not** create its database — create it before setup.
+Connect to the management database (`postgres`) on your PostgreSQL server
+with a SQL client (for the optional Aurora cluster, the endpoint and admin
+credentials are in the rendered values file) and create the database named
+in the values file (pre-filled as the deployment name, `-` replaced by `_`):
+
+```sql
+CREATE DATABASE <database-name>;
+```
+
+### 4. Create the application identity: IAM role, service account, binding
 
 The whole identity chain is yours to create before setup, as part of your
 compute configuration, **once per deployment**: an IAM role with the trust
@@ -189,7 +204,7 @@ aws eks create-pod-identity-association \
   --role-arn "arn:aws:iam::<account-id>:role/<deployment>-app"
 ```
 
-### 4. Install
+### 5. Install
 
 Trigger the deployment from the Sema4 Enterprise portal at
 https://get.sema4.ai; it asks for the values file during setup. Setup cannot
