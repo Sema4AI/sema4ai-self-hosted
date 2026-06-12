@@ -17,6 +17,20 @@ output "values_files" {
   description = "Rendered Helm values file per deployment. Fill every remaining REPLACE_ME before starting setup in the Sema4 Enterprise portal."
 }
 
+output "eks_cluster_name" {
+  value       = one(module.eks[*].cluster_name)
+  description = "EKS cluster name (null when create_cluster is false). Configure kubectl with: aws eks update-kubeconfig --name <this> --region <region>"
+}
+
+output "eks_cluster_endpoint" {
+  value = one(module.eks[*].cluster_endpoint)
+}
+
+output "app_role_arns" {
+  value       = { for d, r in aws_iam_role.app : d => r.arn }
+  description = "Per-deployment application IAM role, bound via Pod Identity to namespace <deployment>, service account <deployment>-app."
+}
+
 output "rds_endpoint" {
   value       = one(module.rds[*].cluster_endpoint)
   description = "Aurora writer endpoint (null when create_database is false)."

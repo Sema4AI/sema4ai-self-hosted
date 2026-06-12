@@ -1,0 +1,24 @@
+# IngressClass for the EKS Auto Mode built-in load-balancing controller,
+# rendered by Terraform (scheme follows external_loadbalancer). Apply with:
+#   kubectl apply -f rendered/ingressclass-alb.yaml
+# Changing the scheme replaces the ALB (new DNS name — update the CNAME).
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: alb-${scheme}
+spec:
+  scheme: ${scheme}
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+  annotations:
+    # Make this the default class so Ingresses without a className also work.
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: alb-${scheme}

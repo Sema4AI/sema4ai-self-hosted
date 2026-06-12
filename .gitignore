@@ -20,6 +20,9 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 
+# Per-environment variable files contain no secrets and are version-controlled.
+!**/live_vars/*.tfvars
+
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
 override.tf

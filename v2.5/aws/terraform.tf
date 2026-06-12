@@ -16,10 +16,16 @@ terraform {
     }
   }
 
-  # State backend intentionally not configured — add your organization's
-  # standard backend (e.g. S3) here. With no backend, state is stored locally
-  # in terraform.tfstate, which contains the Aurora master password when the
-  # optional database is enabled: protect it accordingly.
+  # State contains the Aurora master password when the optional database is
+  # enabled, hence encrypt = true. The key is per environment, supplied at
+  # init time:
+  #   terraform init -reconfigure -backend-config=live_vars/<env>.backend.hcl
+  #   terraform plan|apply -var-file=live_vars/<env>.tfvars
+  backend "s3" {
+    bucket  = "mm-iac-terraform-aws"
+    region  = "us-east-1"
+    encrypt = true
+  }
 }
 
 provider "aws" {
