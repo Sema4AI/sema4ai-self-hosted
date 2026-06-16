@@ -1,0 +1,50 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - curl
+  - ca-certificates
+  - jq
+  - postgresql-client
+
+write_files:
+  - path: /etc/profile.d/s4-banner.sh
+    permissions: '0644'
+    content: |
+      cat <<'BANNER'
+
+      ── Sema4.ai self-hosted ──────────────────────────────────────────────
+      This VM is provisioned for hosting Sema4.ai via Replicated Embedded Cluster.
+
+      Install instructions: https://get.sema4.ai
+
+      KOTS admin console (after install) — tunnel from your laptop with:
+        ssh -L 8800:localhost:30000 <user>@<this-vm>
+        then open https://localhost:8800
+
+      Cluster shell (after install) — exports KUBECONFIG and PATH for
+      kubectl, k0s, helm, etc:
+        /var/lib/embedded-cluster/bin/sema4ai shell
+
+      Install k9s for an interactive cluster TUI:
+        curl -sS https://webi.sh/k9s | sh
+        source ~/.config/envman/PATH.env
+      ──────────────────────────────────────────────────────────────────────
+
+      BANNER
+
+mounts:
+  - ['/dev/disk/azure/scsi1/lun0-part1', '/var/lib/embedded-cluster', 'ext4', 'defaults,nofail', '0', '2']
+
+disk_setup:
+  /dev/disk/azure/scsi1/lun0:
+    table_type: gpt
+    layout: true
+    overwrite: false
+
+fs_setup:
+  - device: /dev/disk/azure/scsi1/lun0
+    partition: 1
+    filesystem: ext4
+    overwrite: false
