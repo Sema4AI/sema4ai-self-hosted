@@ -1,0 +1,153 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "infraId",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Deployment name (infraId)",
+        "toolTip": "Unique lowercase DNS label used in resource names and as the VM's public DNS label. 3-15 chars, start with a letter.",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z][a-z0-9-]{1,13}[a-z0-9]$",
+          "validationMessage": "3-15 characters, lowercase letters/digits/hyphens, starting with a letter and ending with a letter or digit."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "vm",
+        "label": "Virtual machine",
+        "elements": [
+          {
+            "name": "vmSize",
+            "type": "Microsoft.Compute.SizeSelector",
+            "label": "VM size",
+            "toolTip": "Standard_D4s_v6 (4 vCPU / 16 GiB) is the recommended floor.",
+            "recommendedSizes": ["Standard_D4s_v6"],
+            "constraints": {
+              "allowedSizes": []
+            },
+            "options": {
+              "hideDiskTypeFilter": false
+            },
+            "osPlatform": "Linux",
+            "count": 1
+          },
+          {
+            "name": "adminUsername",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Admin username",
+            "defaultValue": "s4admin",
+            "toolTip": "Linux admin username on the VM.",
+            "constraints": {
+              "required": true,
+              "regex": "^[a-z][a-z0-9-]{2,31}$",
+              "validationMessage": "Lowercase, 3-32 chars, starting with a letter."
+            }
+          },
+          {
+            "name": "adminSshPublicKey",
+            "type": "Microsoft.Common.TextBox",
+            "label": "SSH public key",
+            "multiLine": true,
+            "toolTip": "OpenSSH public key authorized for the admin user. Generate one with: ssh-keygen -t ed25519",
+            "constraints": {
+              "required": true,
+              "regex": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+) .+",
+              "validationMessage": "Paste an OpenSSH public key, e.g. 'ssh-ed25519 AAAA... user@host'."
+            }
+          },
+          {
+            "name": "adminSshCidr",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Allowed SSH source CIDR",
+            "defaultValue": "0.0.0.0/0",
+            "toolTip": "CIDR allowed inbound on port 22. Tighten to your VPN/egress block for production.",
+            "constraints": {
+              "required": true,
+              "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+              "validationMessage": "Enter a CIDR, e.g. 203.0.113.0/24 (or 0.0.0.0/0)."
+            }
+          },
+          {
+            "name": "customHostname",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Custom hostname (optional)",
+            "defaultValue": "",
+            "toolTip": "Customer-facing FQDN. Leave blank to use the Azure-assigned VM FQDN. Point its DNS A record at the VM's public IP after deployment.",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$",
+              "validationMessage": "Leave blank, or enter a valid FQDN like finance-agents.company.com."
+            }
+          }
+        ]
+      },
+      {
+        "name": "database",
+        "label": "Database",
+        "elements": [
+          {
+            "name": "postgresSkuTier",
+            "type": "Microsoft.Common.DropDown",
+            "label": "PostgreSQL tier",
+            "defaultValue": "Burstable",
+            "toolTip": "Burstable suits evaluation/low load. Use General Purpose or Memory Optimized for production.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Burstable", "value": "Burstable" },
+                { "label": "General Purpose", "value": "GeneralPurpose" },
+                { "label": "Memory Optimized", "value": "MemoryOptimized" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "postgresSkuName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "PostgreSQL SKU name",
+            "defaultValue": "Standard_B2s",
+            "toolTip": "Compute SKU name, e.g. Standard_B2s (Burstable) or Standard_D2ads_v5 (General Purpose).",
+            "constraints": {
+              "required": true,
+              "regex": "^Standard_[A-Za-z0-9_]+$",
+              "validationMessage": "Enter a SKU name like Standard_B2s."
+            }
+          },
+          {
+            "name": "postgresStorageSizeGB",
+            "type": "Microsoft.Common.DropDown",
+            "label": "PostgreSQL storage",
+            "defaultValue": "128 GiB",
+            "toolTip": "Storage size for the database server.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "32 GiB", "value": 32 },
+                { "label": "64 GiB", "value": 64 },
+                { "label": "128 GiB", "value": 128 },
+                { "label": "256 GiB", "value": 256 },
+                { "label": "512 GiB", "value": 512 }
+              ],
+              "required": true
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "infraId": "[basics('infraId')]",
+      "location": "[location()]",
+      "vmSize": "[steps('vm').vmSize]",
+      "adminUsername": "[steps('vm').adminUsername]",
+      "adminSshPublicKey": "[steps('vm').adminSshPublicKey]",
+      "adminSshCidr": "[steps('vm').adminSshCidr]",
+      "customHostname": "[steps('vm').customHostname]",
+      "postgresSkuName": "[steps('database').postgresSkuName]",
+      "postgresSkuTier": "[steps('database').postgresSkuTier]",
+      "postgresStorageSizeGB": "[steps('database').postgresStorageSizeGB]"
+    }
+  }
+}

@@ -1,0 +1,1083 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "17649091378414884445"
+    }
+  },
+  "parameters": {
+    "infraId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 15,
+      "metadata": {
+        "description": "Unique lowercase DNS label used in resource names and as the VM public DNS label (3-15 chars, start with a letter)."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the resource group location."
+      }
+    },
+    "adminSshPublicKey": {
+      "type": "string",
+      "metadata": {
+        "description": "SSH public key (OpenSSH format) authorized for the VM admin user. Generate with: ssh-keygen -t ed25519"
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "s4admin",
+      "metadata": {
+        "description": "Linux admin username on the VM."
+      }
+    },
+    "adminSshCidr": {
+      "type": "string",
+      "defaultValue": "0.0.0.0/0",
+      "metadata": {
+        "description": "CIDR allowed inbound on port 22 (SSH). Defaults to anywhere — tighten for production."
+      }
+    },
+    "customHostname": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Customer-facing FQDN. Leave blank to use the Azure-assigned VM FQDN. Point its DNS A record at the vmPublicIp output after deployment."
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_D4s_v6",
+      "metadata": {
+        "description": "VM size. Standard_D4s_v6 (4 vCPU / 16 GiB) is the recommended floor."
+      }
+    },
+    "postgresSkuName": {
+      "type": "string",
+      "defaultValue": "Standard_B2s",
+      "metadata": {
+        "description": "PostgreSQL Flexible Server SKU name. Default is the low-load Burstable B2s."
+      }
+    },
+    "postgresSkuTier": {
+      "type": "string",
+      "defaultValue": "Burstable",
+      "allowedValues": [
+        "Burstable",
+        "GeneralPurpose",
+        "MemoryOptimized"
+      ],
+      "metadata": {
+        "description": "PostgreSQL SKU tier. Use GeneralPurpose or MemoryOptimized for production."
+      }
+    },
+    "postgresStorageSizeGB": {
+      "type": "int",
+      "defaultValue": 128,
+      "metadata": {
+        "description": "PostgreSQL storage size in GB."
+      }
+    },
+    "postgresAdminPassword": {
+      "type": "securestring",
+      "defaultValue": "[format('{0}Aa1!', newGuid())]",
+      "metadata": {
+        "description": "PostgreSQL admin password. Leave the default to auto-generate one (returned as an output to paste into the KOTS console)."
+      }
+    }
+  },
+  "variables": {
+    "databaseName": "[replace(parameters('infraId'), '-', '_')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "vm-identity",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "networking",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "infraId": {
+            "value": "[parameters('infraId')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "877694669116061703"
+            }
+          },
+          "parameters": {
+            "infraId": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique prefix used in resource names."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-vnet', parameters('infraId'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.0.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[format('{0}-db-sn', parameters('infraId'))]",
+                    "properties": {
+                      "addressPrefixes": [
+                        "10.0.2.0/24"
+                      ],
+                      "serviceEndpoints": [
+                        {
+                          "service": "Microsoft.Storage"
+                        }
+                      ],
+                      "delegations": [
+                        {
+                          "name": "fs",
+                          "properties": {
+                            "serviceName": "Microsoft.DBforPostgreSQL/flexibleServers"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "[format('{0}-vm-sn', parameters('infraId'))]",
+                    "properties": {
+                      "addressPrefixes": [
+                        "10.0.16.0/24"
+                      ],
+                      "serviceEndpoints": [
+                        {
+                          "service": "Microsoft.Storage"
+                        },
+                        {
+                          "service": "Microsoft.KeyVault"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "vnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('infraId')))]"
+            },
+            "vnetName": {
+              "type": "string",
+              "value": "[format('{0}-vnet', parameters('infraId'))]"
+            },
+            "dbSubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('infraId'))), '2023-11-01').subnets[0].id]"
+            },
+            "vmSubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('infraId'))), '2023-11-01').subnets[1].id]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "postgres",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "infraId": {
+            "value": "[parameters('infraId')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "dbSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.dbSubnetId.value]"
+          },
+          "vnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.vnetId.value]"
+          },
+          "databaseName": {
+            "value": "[variables('databaseName')]"
+          },
+          "skuName": {
+            "value": "[parameters('postgresSkuName')]"
+          },
+          "skuTier": {
+            "value": "[parameters('postgresSkuTier')]"
+          },
+          "storageSizeGB": {
+            "value": "[parameters('postgresStorageSizeGB')]"
+          },
+          "administratorPassword": {
+            "value": "[parameters('postgresAdminPassword')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "2263033046779063846"
+            }
+          },
+          "parameters": {
+            "infraId": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique prefix used in resource names."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "dbSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet delegated to PostgreSQL Flexible Server (must hold no other resource)."
+              }
+            },
+            "vnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "VNet to link the private DNS zone to, so the server FQDN resolves inside it."
+              }
+            },
+            "databaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the deployment database created on the server."
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "metadata": {
+                "description": "Flexible Server SKU name, e.g. Standard_B2s."
+              }
+            },
+            "skuTier": {
+              "type": "string",
+              "allowedValues": [
+                "Burstable",
+                "GeneralPurpose",
+                "MemoryOptimized"
+              ]
+            },
+            "storageSizeGB": {
+              "type": "int",
+              "metadata": {
+                "description": "Storage size in GB."
+              }
+            },
+            "postgresVersion": {
+              "type": "string",
+              "defaultValue": "17",
+              "metadata": {
+                "description": "PostgreSQL major version. The application requires 17 or newer."
+              }
+            },
+            "administratorLogin": {
+              "type": "string",
+              "defaultValue": "s4admin"
+            },
+            "administratorPassword": {
+              "type": "securestring"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}.private.postgres.database.azure.com', parameters('infraId'))]",
+              "location": "global"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', format('{0}.private.postgres.database.azure.com', parameters('infraId')), format('{0}-vnet-link', parameters('infraId')))]",
+              "location": "global",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[parameters('vnetId')]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', format('{0}.private.postgres.database.azure.com', parameters('infraId')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2023-12-01-preview",
+              "name": "[format('postgres-{0}', parameters('infraId'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('skuName')]",
+                "tier": "[parameters('skuTier')]"
+              },
+              "properties": {
+                "version": "[parameters('postgresVersion')]",
+                "administratorLogin": "[parameters('administratorLogin')]",
+                "administratorLoginPassword": "[parameters('administratorPassword')]",
+                "storage": {
+                  "storageSizeGB": "[parameters('storageSizeGB')]"
+                },
+                "network": {
+                  "delegatedSubnetResourceId": "[parameters('dbSubnetId')]",
+                  "privateDnsZoneArmResourceId": "[resourceId('Microsoft.Network/privateDnsZones', format('{0}.private.postgres.database.azure.com', parameters('infraId')))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('{0}.private.postgres.database.azure.com', parameters('infraId')), format('{0}-vnet-link', parameters('infraId')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', format('{0}.private.postgres.database.azure.com', parameters('infraId')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+              "apiVersion": "2023-12-01-preview",
+              "name": "[format('{0}/{1}', format('postgres-{0}', parameters('infraId')), 'azure.extensions')]",
+              "properties": {
+                "value": "UUID-OSSP",
+                "source": "user-override"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('postgres-{0}', parameters('infraId')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+              "apiVersion": "2023-12-01-preview",
+              "name": "[format('{0}/{1}', format('postgres-{0}', parameters('infraId')), parameters('databaseName'))]",
+              "properties": {
+                "charset": "UTF8",
+                "collation": "en_US.utf8"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/configurations', format('postgres-{0}', parameters('infraId')), 'azure.extensions')]",
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('postgres-{0}', parameters('infraId')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "host": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('postgres-{0}', parameters('infraId'))), '2023-12-01-preview').fullyQualifiedDomainName]"
+            },
+            "user": {
+              "type": "string",
+              "value": "[parameters('administratorLogin')]"
+            },
+            "database": {
+              "type": "string",
+              "value": "[parameters('databaseName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "infraId": {
+            "value": "[parameters('infraId')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.vmSubnetId.value]"
+          },
+          "identityPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity'), '2023-01-31').principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "9199432492222593873"
+            }
+          },
+          "parameters": {
+            "infraId": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique prefix used in resource names."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "vmSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet of the application VM, allowed to bypass the storage firewall."
+              }
+            },
+            "identityPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the VM managed identity, granted Storage Blob Data Contributor."
+              }
+            }
+          },
+          "variables": {
+            "storageAccountName": "[toLower(take(format('{0}files', replace(parameters('infraId'), '-', '')), 24))]",
+            "containerName": "[format('{0}-agent-files', parameters('infraId'))]",
+            "blobContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[variables('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_ZRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "encryption": {
+                  "requireInfrastructureEncryption": true,
+                  "keySource": "Microsoft.Storage",
+                  "services": {
+                    "blob": {
+                      "enabled": true
+                    },
+                    "file": {
+                      "enabled": true
+                    }
+                  }
+                },
+                "networkAcls": {
+                  "defaultAction": "Deny",
+                  "bypass": "AzureServices",
+                  "virtualNetworkRules": [
+                    {
+                      "id": "[parameters('vmSubnetId')]",
+                      "action": "Allow"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', variables('containerName'))]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), parameters('identityPrincipalId'), variables('blobContributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('blobContributorRoleId'))]",
+                "principalId": "[parameters('identityPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "storageAccountName": {
+              "type": "string",
+              "value": "[variables('storageAccountName')]"
+            },
+            "storageContainerName": {
+              "type": "string",
+              "value": "[variables('containerName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyvault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "infraId": {
+            "value": "[parameters('infraId')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tenantId": {
+            "value": "[subscription().tenantId]"
+          },
+          "identityPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity'), '2023-01-31').principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "257214592498528383"
+            }
+          },
+          "parameters": {
+            "infraId": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique prefix used in resource names."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region. Key Vault must be in the same region as the VM."
+              }
+            },
+            "tenantId": {
+              "type": "string",
+              "metadata": {
+                "description": "Tenant ID for the Key Vault access policies."
+              }
+            },
+            "identityPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the VM managed identity (granted Get/WrapKey/UnwrapKey on the KEK)."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[format('kv-{0}', parameters('infraId'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "tenantId": "[parameters('tenantId')]",
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "accessPolicies": [
+                  {
+                    "tenantId": "[parameters('tenantId')]",
+                    "objectId": "[parameters('identityPrincipalId')]",
+                    "permissions": {
+                      "keys": [
+                        "get",
+                        "wrapKey",
+                        "unwrapKey"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/keys",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', format('kv-{0}', parameters('infraId')), 'envelope-encryption')]",
+              "properties": {
+                "kty": "RSA",
+                "keySize": 2048,
+                "keyOps": [
+                  "wrapKey",
+                  "unwrapKey"
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('infraId')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultName": {
+              "type": "string",
+              "value": "[format('kv-{0}', parameters('infraId'))]"
+            },
+            "keyVaultKeyUrl": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/keys', format('kv-{0}', parameters('infraId')), 'envelope-encryption'), '2023-07-01').keyUriWithVersion]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "vm",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "infraId": {
+            "value": "[parameters('infraId')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vmSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.vmSubnetId.value]"
+          },
+          "identityId": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity')]"
+          },
+          "vmSize": {
+            "value": "[parameters('vmSize')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminSshPublicKey": {
+            "value": "[parameters('adminSshPublicKey')]"
+          },
+          "adminSshCidr": {
+            "value": "[parameters('adminSshCidr')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "14440912295127266625"
+            }
+          },
+          "parameters": {
+            "infraId": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique prefix used in resource names and as the public DNS label."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "vmSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet for the VM NIC."
+              }
+            },
+            "identityId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the user-assigned managed identity to attach."
+              }
+            },
+            "vmSize": {
+              "type": "string",
+              "metadata": {
+                "description": "VM size."
+              }
+            },
+            "adminUsername": {
+              "type": "string",
+              "metadata": {
+                "description": "Linux admin username."
+              }
+            },
+            "adminSshPublicKey": {
+              "type": "string",
+              "metadata": {
+                "description": "SSH public key (OpenSSH format) authorized for the admin user."
+              }
+            },
+            "adminSshCidr": {
+              "type": "string",
+              "metadata": {
+                "description": "CIDR allowed inbound on port 22."
+              }
+            },
+            "dataDiskSizeGB": {
+              "type": "int",
+              "defaultValue": 128,
+              "metadata": {
+                "description": "Data disk size in GB (mounted at /var/lib/embedded-cluster)."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "#cloud-config\npackage_update: true\npackage_upgrade: false\n\npackages:\n  - curl\n  - ca-certificates\n  - jq\n  - postgresql-client\n\nwrite_files:\n  - path: /etc/profile.d/s4-banner.sh\n    permissions: '0644'\n    content: |\n      cat <<'BANNER'\n\n      ── Sema4.ai self-hosted ──────────────────────────────────────────────\n      This VM is provisioned for hosting Sema4.ai via Replicated Embedded Cluster.\n\n      Install instructions: https://get.sema4.ai\n\n      KOTS admin console (after install) — tunnel from your laptop with:\n        ssh -L 8800:localhost:30000 <user>@<this-vm>\n        then open https://localhost:8800\n\n      Cluster shell (after install) — exports KUBECONFIG and PATH for\n      kubectl, k0s, helm, etc:\n        /var/lib/embedded-cluster/bin/sema4ai shell\n\n      Install k9s for an interactive cluster TUI:\n        curl -sS https://webi.sh/k9s | sh\n        source ~/.config/envman/PATH.env\n      ──────────────────────────────────────────────────────────────────────\n\n      BANNER\n\nmounts:\n  - ['/dev/disk/azure/scsi1/lun0-part1', '/var/lib/embedded-cluster', 'ext4', 'defaults,nofail', '0', '2']\n\ndisk_setup:\n  /dev/disk/azure/scsi1/lun0:\n    table_type: gpt\n    layout: true\n    overwrite: false\n\nfs_setup:\n  - device: /dev/disk/azure/scsi1/lun0\n    partition: 1\n    filesystem: ext4\n    overwrite: false\n",
+            "vmName": "[format('vm-{0}', parameters('infraId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-pip', variables('vmName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                  "domainNameLabel": "[parameters('infraId')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-nsg', variables('vmName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowHttpsFromInternet",
+                    "properties": {
+                      "priority": 110,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  },
+                  {
+                    "name": "AllowAdminSSH",
+                    "properties": {
+                      "priority": 200,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "22",
+                      "sourceAddressPrefix": "[parameters('adminSshCidr')]",
+                      "destinationAddressPrefix": "*"
+                    }
+                  },
+                  {
+                    "name": "DenyAllOtherInbound",
+                    "properties": {
+                      "priority": 4000,
+                      "direction": "Inbound",
+                      "access": "Deny",
+                      "protocol": "*",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "*",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-nic', variables('vmName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', variables('vmName')))]"
+                },
+                "ipConfigurations": [
+                  {
+                    "name": "primary",
+                    "properties": {
+                      "subnet": {
+                        "id": "[parameters('vmSubnetId')]"
+                      },
+                      "privateIPAllocationMethod": "Dynamic",
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip', variables('vmName')))]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', variables('vmName')))]",
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip', variables('vmName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2024-07-01",
+              "name": "[variables('vmName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('identityId'))]": {}
+                }
+              },
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                  "computerName": "[variables('vmName')]",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "customData": "[base64(variables('$fxv#0'))]",
+                  "linuxConfiguration": {
+                    "disablePasswordAuthentication": true,
+                    "ssh": {
+                      "publicKeys": [
+                        {
+                          "path": "[format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername'))]",
+                          "keyData": "[parameters('adminSshPublicKey')]"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "ubuntu-24_04-lts",
+                    "sku": "server",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "name": "[format('{0}-osdisk', variables('vmName'))]",
+                    "caching": "ReadWrite",
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Premium_LRS"
+                    },
+                    "diskSizeGB": 64
+                  },
+                  "dataDisks": [
+                    {
+                      "name": "[format('{0}-datadisk', variables('vmName'))]",
+                      "lun": 0,
+                      "caching": "ReadWrite",
+                      "createOption": "Empty",
+                      "diskSizeGB": "[parameters('dataDiskSizeGB')]",
+                      "managedDisk": {
+                        "storageAccountType": "Premium_LRS"
+                      }
+                    }
+                  ]
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmName')))]"
+                    }
+                  ]
+                },
+                "diagnosticsProfile": {
+                  "bootDiagnostics": {
+                    "enabled": true
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmName')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vmPublicIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip', variables('vmName'))), '2023-11-01').ipAddress]"
+            },
+            "vmPublicFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip', variables('vmName'))), '2023-11-01').dnsSettings.fqdn]"
+            },
+            "vmPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmName'))), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+            },
+            "adminUsername": {
+              "type": "string",
+              "value": "[parameters('adminUsername')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'vm-identity')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "vmPublicIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vm'), '2025-04-01').outputs.vmPublicIp.value]"
+    },
+    "vmPublicFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vm'), '2025-04-01').outputs.vmPublicFqdn.value]"
+    },
+    "sshCommand": {
+      "type": "string",
+      "value": "[format('ssh {0}@{1}', parameters('adminUsername'), if(empty(parameters('customHostname')), reference(resourceId('Microsoft.Resources/deployments', 'vm'), '2025-04-01').outputs.vmPublicFqdn.value, parameters('customHostname')))]"
+    },
+    "kotsAdminConsoleSshCommand": {
+      "type": "string",
+      "value": "[format('ssh -L 8800:localhost:30000 {0}@{1}', parameters('adminUsername'), if(empty(parameters('customHostname')), reference(resourceId('Microsoft.Resources/deployments', 'vm'), '2025-04-01').outputs.vmPublicFqdn.value, parameters('customHostname')))]"
+    },
+    "externalUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', if(empty(parameters('customHostname')), reference(resourceId('Microsoft.Resources/deployments', 'vm'), '2025-04-01').outputs.vmPublicFqdn.value, parameters('customHostname')))]"
+    },
+    "infrastructurePlatform": {
+      "type": "string",
+      "value": "Microsoft Azure"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageAccountName.value]"
+    },
+    "blobContainerName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageContainerName.value]"
+    },
+    "blobKeyPrefix": {
+      "type": "string",
+      "value": "[parameters('infraId')]"
+    },
+    "keyVaultKeyUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.keyVaultKeyUrl.value]"
+    },
+    "postgresHost": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.host.value]"
+    },
+    "postgresPort": {
+      "type": "string",
+      "value": "5432"
+    },
+    "postgresUser": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.user.value]"
+    },
+    "postgresDatabase": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.database.value]"
+    },
+    "postgresPassword": {
+      "type": "string",
+      "value": "[parameters('postgresAdminPassword')]"
+    },
+    "oidcClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "OIDC is not provisioned by this template. Register an app with your IdP and fill these in the KOTS console."
+      },
+      "value": "REPLACE_ME"
+    },
+    "oidcClientSecret": {
+      "type": "string",
+      "value": "REPLACE_ME"
+    },
+    "oidcServer": {
+      "type": "string",
+      "value": "REPLACE_ME"
+    }
+  }
+}
