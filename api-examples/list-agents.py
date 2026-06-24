@@ -25,7 +25,8 @@ from lib.config import load  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", help="Filter by name prefix (case-insensitive).")
     parser.add_argument("--state", choices=["draft", "live"], help="Filter by lifecycle state.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")

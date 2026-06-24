@@ -33,9 +33,10 @@ from lib.config import load  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--agent-id", required=True)
-    parser.add_argument("--dest", required=True)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--agent-id", required=True, help="ID of the agent to export (see list-agents.py).")
+    parser.add_argument("--dest", required=True, help="Directory to write the agent tree into.")
     args = parser.parse_args()
 
     config = load()

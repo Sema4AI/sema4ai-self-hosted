@@ -113,9 +113,11 @@ def _report(current: dict, patch: dict, blocking: list[str]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", required=True)
-    parser.add_argument("--mode", choices=["draft", "live"], default="draft")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--repo", required=True, help="Path to the git-tracked agent repo.")
+    parser.add_argument("--mode", choices=["draft", "live"], default="draft",
+                        help="draft: stage for review (default). live: publish a new live version.")
     parser.add_argument("--base", help="git ref to diff against for unsupported-change detection")
     parser.add_argument("--simulate", action="store_true",
                         help="compare to the published version and report; apply nothing")
