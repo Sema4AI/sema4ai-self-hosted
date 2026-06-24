@@ -88,9 +88,11 @@ def _blocking_changes(repo: Path, base: str) -> list[str]:
     return blocking
 
 
-def _report(current: dict, patch: dict, blocking: list[str]) -> None:
-    """Print a human-readable comparison of the repo against the published agent."""
-    print(f"Comparing repo against published agent '{current['name']}':\n")
+def _report(current: dict, patch: dict, blocking: list[str], mode: str,
+            pending_draft: bool) -> None:
+    """Print a comparison of the repo vs the published agent and the action a real run would take."""
+    print(f"SIMULATION — no changes made. Comparing repo against published agent "
+          f"'{current['name']}':\n")
     if not patch and not blocking:
         print("  (no differences — agent already matches the repo)")
     for field, new in patch.items():
@@ -110,6 +112,20 @@ def _report(current: dict, patch: dict, blocking: list[str]) -> None:
     if blocking:
         summary += f", {len(blocking)} change(s) blocked"
     print(summary + ".")
+
+    # Spell out what running WITHOUT --simulate (at this --mode) would do.
+    print()
+    if blocking:
+        print(f"==> Without --simulate (--mode {mode}): this would be REFUSED and exit 1 "
+              "because of the blocked change(s) above.")
+    elif mode == "live" and (patch or pending_draft):
+        what = "your edits" if patch else "the already-staged draft"
+        print(f"==> Without --simulate (--mode live): this WILL PUBLISH {what} as a new live version.")
+    elif mode == "draft" and patch:
+        print("==> Without --simulate (--mode draft): this WILL STAGE a draft "
+              "(the live version stays untouched).")
+    else:
+        print(f"==> Without --simulate (--mode {mode}): nothing would change.")
 
 
 def main() -> None:
@@ -133,8 +149,15 @@ def main() -> None:
     current = client.get_agent(agent_id)
     patch = {k: v for k, v in desired.items() if v is not None and v != current.get(k)}
 
+    # Lifecycle support + whether a draft is already staged (mirrors what a real run sees).
+    try:
+        lifecycle = True
+        pending_draft = bool(client.get_agent_state(agent_id).get("has_draft"))
+    except ApiError:
+        lifecycle, pending_draft = False, False  # flag off — PATCH affects live directly
+
     if args.simulate:
-        _report(current, patch, blocking)
+        _report(current, patch, blocking, args.mode, pending_draft)
         return
 
     if blocking:
@@ -142,13 +165,6 @@ def main() -> None:
         for item in blocking:
             print(f"  - {item}")
         sys.exit(1)
-
-    # Detect lifecycle support and whether a draft is already staged.
-    try:
-        lifecycle = True
-        pending_draft = bool(client.get_agent_state(agent_id).get("has_draft"))
-    except ApiError:
-        lifecycle, pending_draft = False, False  # flag off — PATCH affects live directly
 
     # In live mode an existing draft is publishable even when the repo adds no new diff.
     if not patch and not (args.mode == "live" and pending_draft):
