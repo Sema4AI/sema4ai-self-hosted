@@ -32,18 +32,19 @@ Version-control an agent in git and publish changes back to its workspace automa
   shows its shape, and [`workflow.example.yml`](workflow.example.yml) is the workflow it drops into
   `.github/workflows/`.
 
-## What can be published today
+## What push.py applies today
 
-| Edit | Applied by |
-|------|-----------|
-| `runbook.md` | `PATCH` runbook_text |
-| name / description | `PATCH` |
-| MCP server attach/detach | `/agents/{id}/mcp-servers` |
-| SDM attach/detach | `/agents/{id}/semantic-data-models` |
+| Edit | Result |
+|------|--------|
+| `runbook.md` | ✓ applied (`PATCH` runbook_text) |
+| name / description | ✓ applied (`PATCH`) |
+| everything else — model, agent settings, welcome message, document intelligence, MCP servers, SDMs, shared files | ✗ refused |
 
-Edits to **model, agent settings, welcome message, document intelligence, or shared files** cannot yet
-be applied to an existing agent (they only enter via create-import). `push.py` detects such changes and
-**fails the run with a clear message** rather than publishing a partially-applied version.
+`push.py` only reconciles the fields the API can patch on an existing agent. Any other edit is detected
+and the run is **refused with a clear message** rather than publishing a partially-applied version
+(those fields otherwise only enter via create-import). Some of them — e.g. MCP server and SDM
+attach/detach — do have API endpoints and could be reconciled in a future version; today they are
+blocked.
 
 ## Draft vs live
 

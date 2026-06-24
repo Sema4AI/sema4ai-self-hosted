@@ -42,8 +42,9 @@ uv run list-agents.py --name "All"     # filter by name prefix; also --state, --
 
 ```
 api-examples/
-  lib/          shared, dependency-free helpers (HTTP client, agent zip<->tree packing)
-  workflows/    one directory per use case (scripts, READMEs, GitHub Actions)
+  list-agents.py   helper: list agents and their ids
+  lib/             shared helpers (HTTP client, agent zip<->tree packing)
+  workflows/       one directory per use case (scripts, READMEs, GitHub Actions)
 ```
 
 The shared `lib/` keeps the cross-cutting logic — pagination, the agent zip ↔ flat-tree round-trip —
