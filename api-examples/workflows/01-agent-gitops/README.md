@@ -66,8 +66,8 @@ uv run pull.py --agent-id <id> --dest ~/agents/my-agent
 
 # 2. edit runbook.md (or other config)
 
-# 3. preview a real run (non-destructive)
-uv run push.py --repo ~/agents/my-agent --simulate
+# 3. preview a real run (default mode is dryrun — no writes)
+uv run push.py --repo ~/agents/my-agent
 ```
 
 > For a quick throwaway tryout you can use a temp dir like `/tmp/my-agent` instead — just note macOS
@@ -76,17 +76,20 @@ uv run push.py --repo ~/agents/my-agent --simulate
 `push.py` compares the repo against the agent's actual current state (it exports the live agent to
 diff), so any change is detected automatically — no flags required.
 
-`--mode draft` stages the change for review (the live version is untouched); `--mode live` applies the
-change and publishes a new live version. Running `--mode live` when a draft is already staged (e.g. from
-an earlier `--mode draft` run) publishes that pending draft even if the repo adds no new diff. Changes
-that can't be applied in place yet (model, settings, welcome message, MCP servers, shared files) are
-reported and the run is refused, so a partial version is never published. Discard a test
-draft with the agent's `discard-draft` to return it to pristine.
+It has three modes via `--mode`:
 
-To preview without changing anything, add `--simulate` — it prints what would be applied (a unified
-diff for the runbook), what is blocked, and the action a real run would take, calling no write
-endpoints:
+- **`dryrun`** (default) — preview only; prints what would be applied (a unified diff for the runbook)
+  and what is blocked, calling no write endpoints.
+- **`draft`** — stages the change for review (the live version is untouched).
+- **`live`** — applies the change and publishes a new live version. Running `--mode live` when a draft
+  is already staged (e.g. from an earlier `--mode draft` run) publishes that pending draft even if the
+  repo adds no new diff.
+
+Changes that can't be applied in place yet (model, settings, welcome message, MCP servers, shared
+files) are reported and a `draft`/`live` run is refused, so a partial version is never published.
+Discard a test draft with the agent's `discard-draft` to return it to pristine.
 
 ```sh
-uv run push.py --repo ~/agents/my-agent --simulate
+uv run push.py --repo ~/agents/my-agent              # dryrun (default)
+uv run push.py --repo ~/agents/my-agent --mode draft
 ```

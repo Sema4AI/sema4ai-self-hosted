@@ -5,8 +5,9 @@
 # ///
 """Reconcile a git-tracked agent repo onto its live agent and publish.
 
-    uv run push.py --repo ./my-agent --mode draft|live
-    uv run push.py --repo ./my-agent --simulate
+    uv run push.py --repo ./my-agent                 # --mode dryrun (default): preview only
+    uv run push.py --repo ./my-agent --mode draft    # stage for review
+    uv run push.py --repo ./my-agent --mode live     # publish a new live version
 
 Compares the repo against the agent's actual current state (by exporting it) — no
 git diffing, no flags to remember. Whatever differs is detected automatically.
@@ -24,8 +25,8 @@ Steps:
   5. --mode live: POST /agents/{id}/publish.  --mode draft: stop, leaving the
      change staged for UI review.
 
-With --simulate, stops after step 2: prints what would change and the action a
-real run would take, without calling any write endpoint.
+--mode dryrun (the default) stops after step 2: it prints what would change
+without calling any write endpoint.
 """
 
 from __future__ import annotations
@@ -121,10 +122,10 @@ def _diff(repo: Path, client: SemaClient, agent_id: str) -> tuple[dict, str, lis
 
 
 def _report(name: str, patch: dict, runbook_diff: list[str], blocking: list[str],
-            mode: str, pending_draft: bool) -> None:
-    """Print the comparison and the action a real run would take, in clear sections."""
+            pending_draft: bool) -> None:
+    """Print the comparison and how to apply it, in clear sections (no writes)."""
     print()
-    print(bold(f"  SIMULATION  ") + dim(f"agent '{name}' · no changes made"))
+    print(bold(f"  DRY RUN  ") + dim(f"agent '{name}' · no changes made"))
     print(RULE)
 
     if not patch and not blocking:
@@ -150,16 +151,15 @@ def _report(name: str, patch: dict, runbook_diff: list[str], blocking: list[str]
         print()
 
     print(RULE)
-    label = dim(f"  Run without --simulate (--mode {mode}):  ")
     if blocking:
-        print(label + red(bold("REFUSED")) + " — exit 1 until the blocked changes above are removed.")
-    elif mode == "live" and (patch or pending_draft):
-        what = "your edits" if patch else "the already-staged draft"
-        print(label + green(bold("PUBLISH")) + f" — {what} become a new live version.")
-    elif mode == "draft" and patch:
-        print(label + yellow(bold("STAGE DRAFT")) + " — staged for review; live version untouched.")
+        print(dim("  Preview · ") + red(bold("a real run would be REFUSED")) +
+              " (--mode draft/live) until the blocked changes above are removed.")
+    elif patch or pending_draft:
+        extra = "" if patch else dim("  (a draft is already staged)")
+        print(dim("  Preview · ") + "re-run with " + bold("--mode draft") + " to stage or " +
+              bold("--mode live") + " to publish." + extra)
     else:
-        print(label + dim("nothing would change."))
+        print(dim("  Preview · nothing to apply."))
     print()
 
 
@@ -167,10 +167,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", required=True, help="Path to the git-tracked agent repo.")
-    parser.add_argument("--mode", choices=["draft", "live"], default="draft",
-                        help="draft: stage for review (default). live: publish a new live version.")
-    parser.add_argument("--simulate", action="store_true",
-                        help="compare to the live agent and report; apply nothing")
+    parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
+                        help="dryrun: preview only, no writes (default). "
+                             "draft: stage for review. live: publish a new live version.")
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -195,8 +194,8 @@ def main() -> None:
     except ApiError:
         lifecycle, pending_draft = False, False
 
-    if args.simulate:
-        _report(name, patch, runbook_diff, blocking, args.mode, pending_draft)
+    if args.mode == "dryrun":
+        _report(name, patch, runbook_diff, blocking, pending_draft)
         return
 
     if blocking:
