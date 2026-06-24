@@ -56,16 +56,22 @@ live version. The convention in `workflow.example.yml`: PRs deploy a draft, push
 Scripts run with [uv](https://docs.astral.sh/uv/) — dependencies are declared inline, nothing to
 install. Set `SEMA4_BASE_URL` and `SEMA4_API_KEY` (or put them in `../../.env`).
 
+The agent repo is its own persistent git repository (separate from this one) that you keep and push
+to GitHub — pick a real directory for it, not a temp path.
+
 ```sh
-# 1. bootstrap a repo from an existing agent
-uv run pull.py --agent-id <id> --dest /tmp/my-agent
+# 1. bootstrap the agent repo from an existing agent
+uv run pull.py --agent-id <id> --dest ~/agents/my-agent
 
 # 2. make it a git repo so push can diff
-( cd /tmp/my-agent && git init -q && git add -A && git commit -qm "import agent" )
+( cd ~/agents/my-agent && git init -q && git add -A && git commit -qm "import agent" )
 
 # 3. edit runbook.md, commit, then preview a draft (non-destructive)
-uv run push.py --repo /tmp/my-agent --mode draft --base HEAD~1
+uv run push.py --repo ~/agents/my-agent --mode draft --base HEAD~1
 ```
+
+> For a quick throwaway tryout you can use a temp dir like `/tmp/my-agent` instead — just note macOS
+> clears `/tmp`, so don't keep anything you care about there.
 
 `--mode draft` stages the change for review (the live version is untouched); `--mode live` publishes a
 new live version. `--base <ref>` enables the guard that blocks edits which can't be applied in place.
