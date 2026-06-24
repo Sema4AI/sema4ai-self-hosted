@@ -53,10 +53,20 @@ live version. The convention in `workflow.example.yml`: PRs deploy a draft, push
 
 ## Run locally
 
-```sh
-# bootstrap a repo from an existing agent
-python pull.py --agent-id <id> --dest ./my-agent
+Scripts run with [uv](https://docs.astral.sh/uv/) — dependencies are declared inline, nothing to
+install. Set `SEMA4_BASE_URL` and `SEMA4_API_KEY` (or put them in `../../.env`).
 
-# preview what a push would apply
-python push.py --repo ./my-agent --mode draft
+```sh
+# 1. bootstrap a repo from an existing agent
+uv run pull.py --agent-id <id> --dest /tmp/my-agent
+
+# 2. make it a git repo so push can diff
+( cd /tmp/my-agent && git init -q && git add -A && git commit -qm "import agent" )
+
+# 3. edit runbook.md, commit, then preview a draft (non-destructive)
+uv run push.py --repo /tmp/my-agent --mode draft --base HEAD~1
 ```
+
+`--mode draft` stages the change for review (the live version is untouched); `--mode live` publishes a
+new live version. `--base <ref>` enables the guard that blocks edits which can't be applied in place.
+Discard a test draft with the agent's `discard-draft` to return it to pristine.

@@ -41,5 +41,8 @@ api-examples/
 ```
 
 The shared `lib/` keeps the cross-cutting logic — pagination, the agent zip ↔ flat-tree round-trip —
-in one place so each workflow stays small. The only third-party dependency is **PyYAML** (used to read
-and rewrite `agent-spec.yaml`), which is preinstalled on GitHub Actions runners.
+in one place so each workflow stays small.
+
+Scripts use [uv](https://docs.astral.sh/uv/) and declare their dependencies inline (PEP 723), so there
+is nothing to install or activate — just `uv run <script>` and uv builds a cached environment on the
+fly. The only third-party dependency is **PyYAML** (to read and rewrite `agent-spec.yaml`).

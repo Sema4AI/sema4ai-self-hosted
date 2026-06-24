@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pyyaml>=6"]
+# ///
 """Bootstrap (or refresh) a git-tracked agent repo from a live agent.
 
-    python pull.py --agent-id <id> --dest ./my-agent
+    uv run pull.py --agent-id <id> --dest ./my-agent
 
 Steps:
   1. Export the agent (GET /agents/{id}/export) -> zip bytes.

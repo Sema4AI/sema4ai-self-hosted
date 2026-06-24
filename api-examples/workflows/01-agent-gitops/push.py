@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pyyaml>=6"]
+# ///
 """Reconcile a git-tracked agent repo onto its live agent and publish.
 
-    python push.py --repo ./my-agent --mode draft|live [--base <git-ref>]
+    uv run push.py --repo ./my-agent --mode draft|live [--base <git-ref>]
 
 Steps:
   1. Read .sema4/target.yaml -> agent_id.
