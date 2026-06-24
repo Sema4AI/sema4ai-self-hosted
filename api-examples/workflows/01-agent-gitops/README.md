@@ -73,8 +73,10 @@ uv run push.py --repo ~/agents/my-agent --mode draft --base HEAD~1
 > For a quick throwaway tryout you can use a temp dir like `/tmp/my-agent` instead — just note macOS
 > clears `/tmp`, so don't keep anything you care about there.
 
-`--mode draft` stages the change for review (the live version is untouched); `--mode live` publishes a
-new live version. `--base <ref>` enables the guard that blocks edits which can't be applied in place.
+`--mode draft` stages the change for review (the live version is untouched); `--mode live` applies the
+change and publishes a new live version. Running `--mode live` when a draft is already staged (e.g. from
+an earlier `--mode draft` run) publishes that pending draft even if the repo adds no new diff.
+`--base <ref>` enables the guard that blocks edits which can't be applied in place.
 Discard a test draft with the agent's `discard-draft` to return it to pristine.
 
 To preview without changing anything, add `--simulate` — it compares the repo against the **published**

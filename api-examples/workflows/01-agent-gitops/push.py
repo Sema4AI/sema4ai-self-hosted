@@ -143,24 +143,30 @@ def main() -> None:
             print(f"  - {item}")
         sys.exit(1)
 
-    if not patch:
-        print("Nothing to apply — agent already matches the repo.")
-        return
-    print(f"Applying to '{current['name']}': {', '.join(patch)}")
-
+    # Detect lifecycle support and whether a draft is already staged.
     try:
-        client.edit_agent(agent_id)  # enter DRAFT if the lifecycle flag is on
         lifecycle = True
+        pending_draft = bool(client.get_agent_state(agent_id).get("has_draft"))
     except ApiError:
-        lifecycle = False  # flag off — PATCH affects the live agent directly
+        lifecycle, pending_draft = False, False  # flag off — PATCH affects live directly
 
-    client.patch_agent(agent_id, **patch)
+    # In live mode an existing draft is publishable even when the repo adds no new diff.
+    if not patch and not (args.mode == "live" and pending_draft):
+        print("Nothing to apply — agent already matches the published version.")
+        return
 
-    if args.mode == "live" and lifecycle:
-        client.publish_agent(agent_id)
-        print("Published a new live version.")
-    elif args.mode == "live":
-        print("Applied directly (lifecycle flag off).")
+    if patch:
+        print(f"Applying to '{current['name']}': {', '.join(patch)}")
+        if lifecycle:
+            client.edit_agent(agent_id)  # enter DRAFT
+        client.patch_agent(agent_id, **patch)
+
+    if args.mode == "live":
+        if lifecycle:
+            client.publish_agent(agent_id)
+            print("Published a new live version.")
+        else:
+            print("Applied directly (lifecycle flag off).")
     else:
         print("Staged as a draft — review and publish in the UI.")
 
