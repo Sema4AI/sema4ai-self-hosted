@@ -32,6 +32,12 @@ cp .env.example .env
 
 Get an API key from your deployment's **Configuration → API keys** page.
 
+To find an agent's id (e.g. to pass to a workflow's `pull.py`):
+
+```sh
+uv run list-agents.py --name "All"     # filter by name prefix; also --state, --json
+```
+
 ## Layout
 
 ```
