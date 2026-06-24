@@ -18,7 +18,7 @@ Steps:
        - any other field that differs (model, agent-settings, welcome-message,
          document-intelligence, mcp-servers, semantic-data-models, shared files)
          can't be applied in place yet -> reported and the run is refused, so a
-         partial version is never published. (Tracked in EPD-7051.)
+         partial version is never published.
   3. POST /agents/{id}/edit -> DRAFT (skipped if the lifecycle flag is off).
   4. PATCH the supported fields.
   5. --mode live: POST /agents/{id}/publish.  --mode draft: stop, leaving the
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -46,6 +47,31 @@ from lib.config import load  # noqa: E402
 
 # Spec fields push.py can apply to an existing agent today (runbook handled via its file).
 SUPPORTED_SPEC_FIELDS = {"name", "description", "runbook"}
+
+_COLOR = ((sys.stdout.isatty() or os.environ.get("FORCE_COLOR"))
+          and os.environ.get("NO_COLOR") is None)
+RULE = "─" * 64
+
+
+def _c(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _COLOR else text
+
+
+def green(t: str) -> str: return _c("32", t)
+def red(t: str) -> str: return _c("31", t)
+def yellow(t: str) -> str: return _c("33", t)
+def bold(t: str) -> str: return _c("1", t)
+def dim(t: str) -> str: return _c("2", t)
+
+
+def _diff_line(line: str) -> str:
+    if line.startswith("+"):
+        return green(line)
+    if line.startswith("-"):
+        return red(line)
+    if line.startswith("@@"):
+        return dim(line)
+    return line
 
 
 def _agent(spec: dict) -> dict:
@@ -86,46 +112,55 @@ def _diff(repo: Path, client: SemaClient, agent_id: str) -> tuple[dict, str, lis
         if key in SUPPORTED_SPEC_FIELDS:
             continue
         if want_agent.get(key) != have_agent.get(key):
-            blocking.append(f"agent-spec.yaml: '{key}' changed (can't be applied in place yet — EPD-7051)")
+            blocking.append(f"agent-spec.yaml: {key}")
     for name in sorted(set(want_files) | set(have_files)):
         if want_files.get(name) != have_files.get(name):
-            blocking.append(f"agent-files/{name} changed (can't be applied in place yet — EPD-7051)")
+            blocking.append(f"agent-files/{name}")
 
     return patch, have_agent.get("name", ""), blocking
 
 
 def _report(name: str, patch: dict, runbook_diff: list[str], blocking: list[str],
             mode: str, pending_draft: bool) -> None:
-    """Print the comparison and the action a real run would take."""
-    print(f"SIMULATION — no changes made. Comparing repo against live agent '{name}':\n")
-    if not patch and not blocking:
-        print("  (no differences — agent already matches the repo)")
-    for field in patch:
-        if field == "runbook_text":
-            print("  ~ runbook_text:")
-            for line in runbook_diff:
-                print(f"      {line}")
-        else:
-            print(f"  ~ {field}:  set to {patch[field]!r}")
-    for item in blocking:
-        print(f"  ✗ blocked: {item}")
-    summary = f"\n{len(patch)} field(s) would be applied"
-    if blocking:
-        summary += f", {len(blocking)} change(s) blocked"
-    print(summary + ".")
-
+    """Print the comparison and the action a real run would take, in clear sections."""
     print()
+    print(bold(f"  SIMULATION  ") + dim(f"agent '{name}' · no changes made"))
+    print(RULE)
+
+    if not patch and not blocking:
+        print(dim("  No differences — the agent already matches the repo."))
+
+    if patch:
+        print(green(bold(f"  ✓ WILL APPLY  ({len(patch)})")))
+        for field in patch:
+            if field == "runbook_text":
+                print(f"      • runbook_text")
+                for line in runbook_diff:
+                    if line.startswith(("---", "+++")):
+                        continue
+                    print("          " + _diff_line(line))
+            else:
+                print(f"      • {field}  →  {patch[field]!r}")
+        print()
+
     if blocking:
-        print(f"==> Without --simulate (--mode {mode}): this would be REFUSED and exit 1 "
-              "because of the blocked change(s) above.")
+        print(red(bold(f"  ✗ BLOCKED  ({len(blocking)})")) + dim("  can't be applied to a live agent yet"))
+        for item in blocking:
+            print(red(f"      • {item}"))
+        print()
+
+    print(RULE)
+    label = dim(f"  Run without --simulate (--mode {mode}):  ")
+    if blocking:
+        print(label + red(bold("REFUSED")) + " — exit 1 until the blocked changes above are removed.")
     elif mode == "live" and (patch or pending_draft):
         what = "your edits" if patch else "the already-staged draft"
-        print(f"==> Without --simulate (--mode live): this WILL PUBLISH {what} as a new live version.")
+        print(label + green(bold("PUBLISH")) + f" — {what} become a new live version.")
     elif mode == "draft" and patch:
-        print("==> Without --simulate (--mode draft): this WILL STAGE a draft "
-              "(the live version stays untouched).")
+        print(label + yellow(bold("STAGE DRAFT")) + " — staged for review; live version untouched.")
     else:
-        print(f"==> Without --simulate (--mode {mode}): nothing would change.")
+        print(label + dim("nothing would change."))
+    print()
 
 
 def main() -> None:
@@ -165,17 +200,17 @@ def main() -> None:
         return
 
     if blocking:
-        print("Refusing to publish — these changes cannot be applied to a live agent yet:")
+        print(red(bold(f"  ✗ REFUSED  ({len(blocking)})")) + dim("  these can't be applied to a live agent yet:"))
         for item in blocking:
-            print(f"  - {item}")
+            print(red(f"      • {item}"))
         sys.exit(1)
 
     if not patch and not (args.mode == "live" and pending_draft):
-        print("Nothing to apply — agent already matches the repo.")
+        print(dim("Nothing to apply — agent already matches the repo."))
         return
 
     if patch:
-        print(f"Applying to '{name}': {', '.join(patch)}")
+        print(green(bold("  ✓ APPLYING  ")) + f"{', '.join(patch)}")
         if lifecycle:
             client.edit_agent(agent_id)
         client.patch_agent(agent_id, **patch)
@@ -183,11 +218,11 @@ def main() -> None:
     if args.mode == "live":
         if lifecycle:
             client.publish_agent(agent_id)
-            print("Published a new live version.")
+            print(green(bold("  ✓ PUBLISHED  ")) + "a new live version.")
         else:
-            print("Applied directly (lifecycle flag off).")
+            print(green(bold("  ✓ APPLIED  ")) + "directly (lifecycle flag off).")
     else:
-        print("Staged as a draft — review and publish in the UI.")
+        print(yellow(bold("  ✓ STAGED  ")) + "as a draft — review and publish in the UI.")
 
 
 if __name__ == "__main__":

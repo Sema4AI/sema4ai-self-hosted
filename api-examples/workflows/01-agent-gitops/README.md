@@ -43,8 +43,7 @@ Version-control an agent in git and publish changes back to its workspace automa
 
 Edits to **model, agent settings, welcome message, document intelligence, or shared files** cannot yet
 be applied to an existing agent (they only enter via create-import). `push.py` detects such changes and
-**fails the run with a clear message** rather than publishing a partially-applied version. Closing this
-gap is tracked in EPD-7051.
+**fails the run with a clear message** rather than publishing a partially-applied version.
 
 ## Draft vs live
 
@@ -79,8 +78,8 @@ diff), so any change is detected automatically — no flags required.
 `--mode draft` stages the change for review (the live version is untouched); `--mode live` applies the
 change and publishes a new live version. Running `--mode live` when a draft is already staged (e.g. from
 an earlier `--mode draft` run) publishes that pending draft even if the repo adds no new diff. Changes
-that can't be applied in place yet (model, settings, welcome message, MCP servers, shared files — see
-EPD-7051) are reported and the run is refused, so a partial version is never published. Discard a test
+that can't be applied in place yet (model, settings, welcome message, MCP servers, shared files) are
+reported and the run is refused, so a partial version is never published. Discard a test
 draft with the agent's `discard-draft` to return it to pristine.
 
 To preview without changing anything, add `--simulate` — it prints what would be applied (a unified

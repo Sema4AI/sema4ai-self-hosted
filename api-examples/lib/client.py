@@ -113,7 +113,7 @@ class SemaClient:
         """POST /agents/import (multipart, field 'file') -> created agent.
 
         NOTE: today this always CREATES a new agent. Updating an existing
-        agent in place is tracked in EPD-7051.
+        agent in place is not yet supported by the API.
         """
         return self.post_multipart("/agents/import", field="file",
                                    filename=filename, content=zip_bytes)

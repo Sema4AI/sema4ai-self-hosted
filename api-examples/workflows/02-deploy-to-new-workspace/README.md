@@ -14,6 +14,6 @@ workspace, let it validate, and publish it live.
 4. Optionally `POST /agents/{id}/publish` to set it live.
 
 > Unlike [01-agent-gitops](../01-agent-gitops/), import here intentionally **creates** a new agent —
-> this is first-time seeding, not an update. Updating an existing agent in place is EPD-7051.
+> this is first-time seeding, not an update.
 
 _Status: planned — scaffolding only._

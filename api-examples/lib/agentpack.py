@@ -114,6 +114,6 @@ def _inject_secrets(spec: dict) -> None:
 
     TODO: resolve each masked secret from the environment by a documented naming
     convention and substitute it in place. Left as a hook until the deploy
-    (whole-package upsert) path is built — see EPD-7051.
+    (whole-package upsert) path is built.
     """
     return
