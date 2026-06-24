@@ -1,0 +1,22 @@
+# Copy this into your AGENT repo at .github/workflows/publish.yml
+#
+# Convention: pull requests deploy a draft (preview), pushes to master go live.
+
+name: Publish agent
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Sema4AI/sema4ai-self-hosted/api-examples/workflows/01-agent-gitops@v1
+        with:
+          base-url: ${{ vars.SEMA4_BASE_URL }}
+          api-key: ${{ secrets.SEMA4_API_KEY }}
+          mode: ${{ github.ref == 'refs/heads/master' && 'live' || 'draft' }}

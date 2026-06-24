@@ -1,0 +1,4 @@
+# Sample semantic data model (trimmed). A real export carries the full SDM YAML.
+name: Accounts Payable
+description: Example semantic data model attached to the agent.
+# ... tables, relationships, and measures omitted for the scaffold ...

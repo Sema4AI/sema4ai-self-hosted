@@ -1,0 +1,44 @@
+# Produced by pull.py from an agent export. This is the git-tracked form:
+# shared files are renamed to human names (agent-files/orders.xlsx) and secret
+# values are redacted ('**********') — real values are injected at deploy time.
+agent-package:
+  spec-version: v2
+  agents:
+  - name: All Features
+    description: My agent
+    model:
+      provider: OpenAI
+      name: gpt-5-3-codex-medium
+    version: 1.0.0
+    architecture: agent_platform.architectures.experimental_1
+    reasoning: disabled
+    runbook: runbook.md
+    action-packages: []
+    knowledge: []
+    semantic-data-models:
+    - name: accounts-payable.yaml
+    shared-files:
+    - name: orders.xlsx
+      mime-type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    mcp-servers:
+    - name: Email (agent@sema4ai.email)
+      transport: streamable-http
+      url: https://mcp-gallery.internal.app.sema4.ai/email/mcp
+      headers:
+        X-SMTP-Host: '**********'
+        X-SMTP-Password:
+          type: secret
+          value: '**********'
+        X-SMTP-Port: '**********'
+        X-SMTP-Username: '**********'
+      force-serial-tool-calls: false
+    conversation-starter: ''
+    document-intelligence: v2.1
+    welcome-message: Whazzup?
+    metadata:
+      mode: conversational
+    selected-tools:
+      tools: []
+    agent-settings:
+      max_iterations: 75
+      conversation_turns_kept_in_context: 35
