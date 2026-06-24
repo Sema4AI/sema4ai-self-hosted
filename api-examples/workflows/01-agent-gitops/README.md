@@ -20,9 +20,9 @@ Version-control an agent in git and publish changes back to its workspace automa
 1. **Bootstrap** — `pull.py` exports the agent, unpacks it into a git-friendly tree, and writes
    `.sema4/target.yaml` recording which agent/workspace this repo maps to.
 2. **Edit** — change `runbook.md` (or other config) in any editor, commit, push.
-3. **Publish** — a GitHub Action runs `push.py`, which diffs the push, reconciles the change onto the
-   agent (`edit` → apply → optionally `publish`), as either a **draft** or an **immediately live**
-   version.
+3. **Publish** — a GitHub Action runs `push.py`, which compares the repo against the live agent and
+   reconciles the difference (`edit` → apply → optionally `publish`), as either a **draft** or an
+   **immediately live** version.
 
 ## Two repos
 
@@ -62,27 +62,31 @@ to GitHub — pick a real directory for it, not a temp path.
 ```sh
 # 1. bootstrap the agent repo from an existing agent
 uv run pull.py --agent-id <id> --dest ~/agents/my-agent
-
-# 2. make it a git repo so push can diff
 ( cd ~/agents/my-agent && git init -q && git add -A && git commit -qm "import agent" )
 
-# 3. edit runbook.md, commit, then preview a draft (non-destructive)
-uv run push.py --repo ~/agents/my-agent --mode draft --base HEAD~1
+# 2. edit runbook.md (or other config)
+
+# 3. preview a real run (non-destructive)
+uv run push.py --repo ~/agents/my-agent --simulate
 ```
 
 > For a quick throwaway tryout you can use a temp dir like `/tmp/my-agent` instead — just note macOS
 > clears `/tmp`, so don't keep anything you care about there.
 
+`push.py` compares the repo against the agent's actual current state (it exports the live agent to
+diff), so any change is detected automatically — no flags required.
+
 `--mode draft` stages the change for review (the live version is untouched); `--mode live` applies the
 change and publishes a new live version. Running `--mode live` when a draft is already staged (e.g. from
-an earlier `--mode draft` run) publishes that pending draft even if the repo adds no new diff.
-`--base <ref>` enables the guard that blocks edits which can't be applied in place.
-Discard a test draft with the agent's `discard-draft` to return it to pristine.
+an earlier `--mode draft` run) publishes that pending draft even if the repo adds no new diff. Changes
+that can't be applied in place yet (model, settings, welcome message, MCP servers, shared files — see
+EPD-7051) are reported and the run is refused, so a partial version is never published. Discard a test
+draft with the agent's `discard-draft` to return it to pristine.
 
-To preview without changing anything, add `--simulate` — it compares the repo against the **published**
-version and prints what would be applied (a unified diff for the runbook) and what is blocked, calling
-no write endpoints:
+To preview without changing anything, add `--simulate` — it prints what would be applied (a unified
+diff for the runbook), what is blocked, and the action a real run would take, calling no write
+endpoints:
 
 ```sh
-uv run push.py --repo ~/agents/my-agent --simulate --base HEAD~1
+uv run push.py --repo ~/agents/my-agent --simulate
 ```

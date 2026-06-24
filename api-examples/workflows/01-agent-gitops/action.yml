@@ -25,10 +25,6 @@ inputs:
     description: "draft (stage for review) or live (publish a new live version)."
     required: false
     default: draft
-  base:
-    description: "Git ref to diff against, to block edits that can't be applied in place. Optional."
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -44,5 +40,4 @@ runs:
       run: |
         uv run "${{ github.action_path }}/push.py" \
           --repo "${{ inputs.repo }}" \
-          --mode "${{ inputs.mode }}" \
-          ${{ inputs.base && format('--base {0}', inputs.base) || '' }}
+          --mode "${{ inputs.mode }}"
