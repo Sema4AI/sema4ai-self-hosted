@@ -6,11 +6,12 @@
 """Reconcile a git-tracked agent repo onto its live agent and publish.
 
     uv run push.py --repo ./my-agent --mode draft|live [--base <git-ref>]
+    uv run push.py --repo ./my-agent --simulate [--base <git-ref>]
 
 Steps:
   1. Read .sema4/target.yaml -> agent_id.
   2. Compute supported edits by comparing the repo's desired state (runbook.md,
-     name/description in agent-spec.yaml) against the live agent.
+     name/description in agent-spec.yaml) against the published agent.
   3. If --base is given, guard against UNSUPPORTED edits: any changed file other
      than runbook.md / name+description in agent-spec.yaml (model, agent-settings,
      welcome-message, document-intelligence, shared files, SDM/MCP content) cannot
@@ -20,11 +21,15 @@ Steps:
   5. PATCH the supported fields.
   6. --mode live: POST /agents/{id}/publish.  --mode draft: stop, leaving the
      change staged for UI review.
+
+With --simulate, stops after step 3: prints what would change vs the published
+version (and what is blocked) without calling edit/patch/publish.
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
 import subprocess
 import sys
 from pathlib import Path
@@ -83,11 +88,37 @@ def _blocking_changes(repo: Path, base: str) -> list[str]:
     return blocking
 
 
+def _report(current: dict, patch: dict, blocking: list[str]) -> None:
+    """Print a human-readable comparison of the repo against the published agent."""
+    print(f"Comparing repo against published agent '{current['name']}':\n")
+    if not patch and not blocking:
+        print("  (no differences — agent already matches the repo)")
+    for field, new in patch.items():
+        old = current.get(field) or ""
+        if field == "runbook_text":
+            diff = difflib.unified_diff(
+                str(old).splitlines(), str(new).splitlines(),
+                fromfile="published", tofile="repo", lineterm="")
+            print(f"  ~ {field}:")
+            for line in diff:
+                print(f"      {line}")
+        else:
+            print(f"  ~ {field}:  {old!r} -> {new!r}")
+    for item in blocking:
+        print(f"  ✗ blocked: {item}")
+    summary = f"\n{len(patch)} field(s) would be applied"
+    if blocking:
+        summary += f", {len(blocking)} change(s) blocked"
+    print(summary + ".")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--mode", choices=["draft", "live"], default="draft")
     parser.add_argument("--base", help="git ref to diff against for unsupported-change detection")
+    parser.add_argument("--simulate", action="store_true",
+                        help="compare to the published version and report; apply nothing")
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -95,17 +126,21 @@ def main() -> None:
     agent_id = target["agent_id"]
     client = SemaClient(load())
 
-    if args.base:
-        blocking = _blocking_changes(repo, args.base)
-        if blocking:
-            print("Refusing to publish — these changes cannot be applied to a live agent yet:")
-            for item in blocking:
-                print(f"  - {item}")
-            sys.exit(1)
-
+    blocking = _blocking_changes(repo, args.base) if args.base else []
     desired = _desired(repo)
     current = client.get_agent(agent_id)
     patch = {k: v for k, v in desired.items() if v is not None and v != current.get(k)}
+
+    if args.simulate:
+        _report(current, patch, blocking)
+        return
+
+    if blocking:
+        print("Refusing to publish — these changes cannot be applied to a live agent yet:")
+        for item in blocking:
+            print(f"  - {item}")
+        sys.exit(1)
+
     if not patch:
         print("Nothing to apply — agent already matches the repo.")
         return

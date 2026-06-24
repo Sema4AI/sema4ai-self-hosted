@@ -76,3 +76,11 @@ uv run push.py --repo ~/agents/my-agent --mode draft --base HEAD~1
 `--mode draft` stages the change for review (the live version is untouched); `--mode live` publishes a
 new live version. `--base <ref>` enables the guard that blocks edits which can't be applied in place.
 Discard a test draft with the agent's `discard-draft` to return it to pristine.
+
+To preview without changing anything, add `--simulate` — it compares the repo against the **published**
+version and prints what would be applied (a unified diff for the runbook) and what is blocked, calling
+no write endpoints:
+
+```sh
+uv run push.py --repo ~/agents/my-agent --simulate --base HEAD~1
+```
