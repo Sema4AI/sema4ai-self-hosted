@@ -14,9 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed so the action can diff against the base commit
 
       - uses: Sema4AI/sema4ai-self-hosted/api-examples/workflows/01-agent-gitops@v1
         with:
           base-url: ${{ vars.SEMA4_BASE_URL }}
           api-key: ${{ secrets.SEMA4_API_KEY }}
           mode: ${{ github.ref == 'refs/heads/master' && 'live' || 'draft' }}
+          # diff base: the pushed-from commit, or the PR's base branch
+          base: ${{ github.event.before || github.event.pull_request.base.sha }}

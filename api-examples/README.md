@@ -41,5 +41,5 @@ api-examples/
 ```
 
 The shared `lib/` keeps the cross-cutting logic — pagination, the agent zip ↔ flat-tree round-trip —
-in one place so each workflow stays small. Everything is Python standard library; there is nothing to
-`pip install`.
+in one place so each workflow stays small. The only third-party dependency is **PyYAML** (used to read
+and rewrite `agent-spec.yaml`), which is preinstalled on GitHub Actions runners.

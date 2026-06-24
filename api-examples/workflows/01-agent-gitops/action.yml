@@ -25,14 +25,25 @@ inputs:
     description: "draft (stage for review) or live (publish a new live version)."
     required: false
     default: draft
+  base:
+    description: "Git ref to diff against, to block edits that can't be applied in place. Optional."
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
+    - name: Ensure PyYAML
+      shell: bash
+      run: python -m pip install --quiet --disable-pip-version-check pyyaml
+
     - name: Publish agent
       shell: bash
       env:
         SEMA4_BASE_URL: ${{ inputs.base-url }}
         SEMA4_API_KEY: ${{ inputs.api-key }}
       run: |
-        python "${{ github.action_path }}/push.py" --repo "${{ inputs.repo }}" --mode "${{ inputs.mode }}"
+        python "${{ github.action_path }}/push.py" \
+          --repo "${{ inputs.repo }}" \
+          --mode "${{ inputs.mode }}" \
+          ${{ inputs.base && format('--base {0}', inputs.base) || '' }}
