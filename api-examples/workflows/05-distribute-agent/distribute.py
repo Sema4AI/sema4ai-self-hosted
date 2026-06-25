@@ -7,7 +7,7 @@
 
     uv run distribute.py --repo ./my-agent [--env prod-eu] [--mode dryrun|draft|live]
 
-Each target workspace is described by an overlay in <repo>/environments/<name>.yaml:
+Each target workspace is described by an overlay in <repo>/.sema4/environments/<name>.yaml:
 
     base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
     api_key_env: SEMA4_API_KEY          # env var holding that workspace's API key
@@ -116,9 +116,9 @@ def _render(repo: Path, env: dict, dest: Path) -> int:
 
 # --- environments ---------------------------------------------------------
 def _load_envs(repo: Path, only: str | None) -> list[tuple[str, Path, dict]]:
-    env_dir = repo / "environments"
+    env_dir = repo / ".sema4" / "environments"
     if not env_dir.is_dir():
-        raise SystemExit(f"no environments/ directory in {repo}")
+        raise SystemExit(f"no .sema4/environments/ directory in {repo}")
     names = [only] if only else sorted(p.stem for p in env_dir.glob("*.yaml"))
     envs = []
     for name in names:

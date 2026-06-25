@@ -33,7 +33,8 @@ import yaml
 
 SPEC_NAME = "agent-spec.yaml"
 # Never wiped on unpack, never shipped inside a package on pack.
-KEEP = {".git", ".sema4", "environments"}
+# .sema4/ holds tool metadata (target.yaml, environments/) — kept out of packages.
+KEEP = {".git", ".sema4"}
 
 
 def _agents(spec: dict) -> list:

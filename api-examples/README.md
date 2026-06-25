@@ -12,10 +12,9 @@ which is the authoritative reference.
 | # | Workflow | What it does | Status |
 |---|----------|--------------|--------|
 | 01 | [`agent-gitops`](workflows/01-agent-gitops/) | Export an agent → version-control it in git → publish changes back to the workspace on push (GitHub Actions) | Flagship |
-| 02 | [`deploy-to-new-workspace`](workflows/02-deploy-to-new-workspace/) | Seed an agent package into a new/empty workspace (first-time deploy) | Planned |
 | 03 | [`agent-endpoints`](workflows/03-agent-endpoints/) | Resolve an agent's external endpoints (MCP, work items) programmatically | Planned |
 | 04 | [`clone-workspace`](workflows/04-clone-workspace/) | Replicate a "golden" workspace's configuration into another ("poor man's Terraform") | Planned |
-| 05 | [`distribute-agent`](workflows/05-distribute-agent/) | Distribute one agent to many workspaces with per-environment overrides and secrets | First-deploy works |
+| 05 | [`distribute-agent`](workflows/05-distribute-agent/) | Distribute one agent to many workspaces (overlays + secrets), or one-shot deploy a package / copy across instances | First-deploy works |
 
 ## Setup
 

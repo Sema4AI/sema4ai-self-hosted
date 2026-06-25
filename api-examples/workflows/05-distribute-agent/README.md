@@ -1,7 +1,11 @@
-# 05 · Distribute an agent to multiple workspaces
+# 05 · Distribute / deploy an agent to other workspaces
 
-Take one version-controlled agent project and deploy it to many workspaces, each with its own
-configuration and secrets — a fleet roll-out driven by per-environment overlay files.
+Two related ways to get an agent into other workspaces:
+
+- **`distribute.py`** — roll one *version-controlled* agent project out to many workspaces, each with
+  its own configuration and secrets, driven by per-environment overlay files.
+- **`deploy.py`** — a one-shot, no-git deploy of a single package into one workspace: from an exported
+  zip, or copied straight from another workspace (cross-instance promotion / disaster recovery).
 
 ## Model
 
@@ -10,9 +14,10 @@ agent-repo/
   agent-spec.yaml          # the base template (secrets stay masked)
   runbook.md
   agent-files/...
-  environments/
-    prod-eu.yaml           # one overlay per target workspace
-    prod-us.yaml
+  .sema4/
+    environments/
+      prod-eu.yaml         # one overlay per target workspace
+      prod-us.yaml
 ```
 
 Each overlay names a target workspace and how the agent differs there:
@@ -48,6 +53,25 @@ uv run distribute.py --repo ~/agents/my-agent --mode live     # create + publish
 
 Targets are independent: one workspace failing doesn't stop the others, and the run exits non-zero if
 any failed.
+
+## One-shot deploy (deploy.py)
+
+No repo or overlays — just move a package into a target workspace:
+
+```sh
+# from a zip on disk
+uv run deploy.py --zip ./agent.zip \
+    --to-url https://b.app.sema4.ai/tenants/spar/api/v2 --to-key-env SEMA4_API_KEY_B
+
+# straight from another workspace (export source -> import target)
+uv run deploy.py --from-agent <id> \
+    --from-url https://a.app.sema4.ai/tenants/spar/api/v2 --from-key-env SEMA4_API_KEY_A \
+    --to-url   https://b.app.sema4.ai/tenants/spar/api/v2 --to-key-env   SEMA4_API_KEY_B
+```
+
+Creates a new agent in the target; `--mode live` publishes it (default stages a draft). For
+cross-workspace reference remapping (data-connection / MCP ids), use the publish endpoint's
+`connection_mappings` / `mcp_server_mappings`.
 
 ## GitHub Actions
 
