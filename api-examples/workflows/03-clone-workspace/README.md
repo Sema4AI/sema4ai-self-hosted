@@ -1,4 +1,4 @@
-# 04 · Clone a workspace
+# 03 · Clone a workspace
 
 Replicate a "golden" workspace's configuration into another, empty one — a "poor man's Terraform"
 driven by a YAML config.
