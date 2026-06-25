@@ -175,7 +175,8 @@ def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
         created = client.import_agent(agentpack.pack(Path(tmp)), filename=f"{name}.zip")
 
     agent_id = created["id"]
-    _write_back_agent_id(path, agent_id)
+    if path is not None:                     # overlay-based targets record the new id
+        _write_back_agent_id(path, agent_id)
     result = f"created {agent_id}"
 
     if mode == "live":
@@ -189,15 +190,21 @@ def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--repo", required=True, help="Path to the agent repo (with environments/).")
-    parser.add_argument("--env", help="Deploy a single environment by name (default: all).")
+    parser.add_argument("--repo", required=True, help="Path to the agent repo.")
+    parser.add_argument("--env", help="Deploy a single environment overlay by name (default: all).")
+    parser.add_argument("--profiles", help="Comma-separated profile names for override-free fan-out "
+                                           "(no overlays; same agent to each).")
     parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
                         help="dryrun: plan only (default). draft: create. live: create and publish.")
     args = parser.parse_args()
 
     repo = Path(args.repo)
-    envs = _load_envs(repo, args.env)
-    print(f"Distributing '{repo}' to {len(envs)} workspace(s) [--mode {args.mode}]\n")
+    if args.profiles:
+        names = [p.strip() for p in args.profiles.split(",") if p.strip()]
+        targets = [(name, None, {"profile": name}) for name in names]
+    else:
+        targets = _load_envs(repo, args.env)
+    print(f"Distributing '{repo}' to {len(targets)} workspace(s) [--mode {args.mode}]\n")
 
     base = yaml.safe_load((repo / "agent-spec.yaml").read_text())
     if base["agent-package"]["agents"][0].get("mcp-servers"):
@@ -205,14 +212,14 @@ def main() -> None:
               "import — they will not appear on the deployed agents.\n")
 
     failures = 0
-    for name, path, env in envs:
+    for name, path, env in targets:
         try:
             print(f"  • {name}: {_deploy(repo, name, path, env, args.mode)}")
         except (ApiError, SystemExit) as exc:
             failures += 1
             print(f"  ✗ {name}: {exc}")
 
-    print(f"\n{len(envs) - failures}/{len(envs)} succeeded.")
+    print(f"\n{len(targets) - failures}/{len(targets)} succeeded.")
     sys.exit(1 if failures else 0)
 
 

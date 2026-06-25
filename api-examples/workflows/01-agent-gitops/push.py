@@ -230,7 +230,8 @@ def main() -> None:
 
     target = yaml.safe_load((repo / ".sema4" / "target.yaml").read_text())
     agent_id = target["agent_id"]
-    client = SemaClient(load(args.profile))
+    # connection precedence: --profile flag > target.yaml's profile > env
+    client = SemaClient(load(args.profile or target.get("profile")))
 
     patch, name, blocking = _diff(repo, client, agent_id)
     runbook_diff: list[str] = []

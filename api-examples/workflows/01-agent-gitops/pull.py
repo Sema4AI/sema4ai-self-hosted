@@ -50,10 +50,12 @@ def main() -> None:
 
     sema_dir = dest / ".sema4"
     sema_dir.mkdir(exist_ok=True)
-    (sema_dir / "target.yaml").write_text(yaml.safe_dump(
-        {"agent_id": args.agent_id, "base_url": config.base_url},
-        sort_keys=False,
-    ))
+    target: dict = {"agent_id": args.agent_id}
+    if args.profile:
+        target["profile"] = args.profile          # the agent's home workspace
+    else:
+        target["base_url"] = config.base_url       # record (connection comes from env)
+    (sema_dir / "target.yaml").write_text(yaml.safe_dump(target, sort_keys=False))
     print(f"Wrote agent tree to {dest}/ — commit it to version-control the agent.")
 
 

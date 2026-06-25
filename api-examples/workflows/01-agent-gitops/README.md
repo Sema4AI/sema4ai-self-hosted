@@ -23,7 +23,8 @@ Version-control an agent in git and publish changes back to its workspace automa
 ```
 
 1. **Bootstrap** — `pull.py` exports the agent, unpacks it into a git-friendly tree, and writes
-   `.sema4/target.yaml` recording which agent/workspace this repo maps to.
+   `.sema4/target.yaml` recording the agent id and its **home** workspace (`profile:` if you pulled
+   with one). `push.py` reads that profile automatically, so you don't repeat `--profile` each run.
 2. **Edit** — change `runbook.md` (or other config) in any editor, commit, push.
 3. **Publish** — a GitHub Action runs `push.py`, which compares the repo against the live agent and
    reconciles the difference (`edit` → apply → optionally `publish`), as either a **draft** or an
@@ -36,6 +37,10 @@ Version-control an agent in git and publish changes back to its workspace automa
 - **The agent repo** is the customer's version-controlled agent. [`sample-agent-repo/`](sample-agent-repo/)
   shows its shape, and [`workflow.example.yml`](workflow.example.yml) is the workflow it drops into
   `.github/workflows/`.
+
+All tool metadata lives under the repo's `.sema4/`: `target.yaml` (this agent's **home** workspace, used
+here) and optionally `environments/` (its **promotion targets**, used by
+[02-distribute-agent](../02-distribute-agent/)). Both reference workspaces by profile.
 
 ## What push.py applies today
 

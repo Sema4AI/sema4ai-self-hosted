@@ -61,13 +61,21 @@ and never read from git.
 ## Run
 
 ```sh
-uv run distribute.py --repo ~/agents/my-agent                 # dryrun: plan all targets
-uv run distribute.py --repo ~/agents/my-agent --env prod-eu   # one target
+uv run distribute.py --repo ~/agents/my-agent                 # dryrun: plan all overlay targets
+uv run distribute.py --repo ~/agents/my-agent --env prod-eu   # one overlay target
 uv run distribute.py --repo ~/agents/my-agent --mode live     # create + publish everywhere
+
+# override-free fan-out: same agent to several workspaces, by profile, no overlays needed
+uv run distribute.py --repo ~/agents/my-agent --profiles prod-eu,prod-us --mode live
 ```
 
+Use **overlays** (`.sema4/environments/*.yaml`) when targets need per-workspace overrides/secrets, or
+**`--profiles`** when you just want the same agent in several workspaces. The overlays and `target.yaml`
+both live under the repo's `.sema4/` — `target.yaml` is the agent's **home** (01's dev loop) and
+`environments/` are its **promotion targets** (02).
+
 - **First deploy** (no `agent_id` in the overlay): creates the agent, writes its id back into the
-  overlay, and publishes if `--mode live`.
+  overlay, and publishes if `--mode live`. (`--profiles` mode doesn't track ids — it's first-deploy only.)
 - **Already deployed** (`agent_id` present): skipped — updating an existing agent in place needs the
   replace-import route (not available yet). Until then, re-distribution is first-deploy only.
 

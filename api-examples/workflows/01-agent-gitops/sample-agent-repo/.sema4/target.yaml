@@ -1,3 +1,3 @@
-# Written by pull.py. Tells push.py which agent this repo maps to.
+# Written by pull.py. Binds this repo to one agent in its home (dev) workspace.
 agent_id: 446d0b17-aa4d-4733-987d-9bf56a2fd8ec
-base_url: https://your-deployment.app.sema4.ai/tenants/spar/api/v2
+profile: darkside        # home workspace (connection from the profiles registry)

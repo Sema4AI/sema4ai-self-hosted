@@ -62,6 +62,10 @@ uv run list-agents.py --profile golden
 uv run workflows/03-clone-workspace/apply.py --profile prod-eu --file workspace.yaml
 ```
 
+These aren't two competing config systems — it's one resolver with the env vars as the **default**
+(unnamed) workspace and profiles as **named** ones. No `--profile` → env. CI uses the env path (GitHub
+Actions injects secrets as env vars); profiles are for operating several workspaces locally.
+
 To find an agent's id (e.g. to pass to a workflow's `pull.py`):
 
 ```sh
