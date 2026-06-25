@@ -39,22 +39,19 @@ def main() -> None:
 
     if args.json:
         print(json.dumps([{"name": a["name"], "id": a["id"], "state": a.get("state"),
-                           "version": a.get("version"), "updated_at": a.get("updated_at"),
-                           "live_version_id": a.get("live_version_id")}
+                           "updated_at": a.get("updated_at")}
                           for a in agents], indent=2))
         return
 
-    # NOTE: the API only exposes the agent-spec's declared `version` (shown as SPEC VER), not the
-    # version of the currently-live published agent — and `updated_at` is last-modified, the closest
-    # proxy for "published at". Neither the live version nor a true publish time is available yet.
-    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  {'SPEC VER':8}  LAST UPDATE")
+    # NOTE: the live agent's version and a true publish timestamp are not exposed by the API
+    # (see EPD-7096); `updated_at` shown here is last-modified, not publish time.
+    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  LAST UPDATE")
     for a in agents:
         name = a.get("name", "")
         if len(name) > 40:
             name = name[:39] + "…"
         updated = (a.get("updated_at") or "")[:16].replace("T", " ")
-        print(f"{name:40}  {a['id']:36}  {a.get('state', ''):5}  "
-              f"{(a.get('version') or '-'):8}  {updated}")
+        print(f"{name:40}  {a['id']:36}  {a.get('state', ''):5}  {updated}")
     print(f"\n{len(agents)} agent(s).")
 
 
