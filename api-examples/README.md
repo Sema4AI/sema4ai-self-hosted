@@ -12,12 +12,12 @@ which is the authoritative reference.
 | # | Workflow | What it does | Status |
 |---|----------|--------------|--------|
 | 01 | [`agent-gitops`](workflows/01-agent-gitops/) | Export an agent → version-control it in git → publish changes back to the workspace on push (GitHub Actions) | Flagship |
-| 02 | [`distribute-agent`](workflows/02-distribute-agent/) | Distribute one agent to many workspaces (overlays + secrets), or one-shot deploy a package / copy across instances | First-deploy works |
+| 02 | [`distribute-agent`](workflows/02-distribute-agent/) | Promote an agent from dev to prod workspace(s) — fan out with per-env config, or one-shot copy across instances | First-deploy works |
 | 03 | [`clone-workspace`](workflows/03-clone-workspace/) | Replicate a "golden" workspace's configuration into another, via profiles ("poor man's Terraform") | Export + apply work |
 
-**01 vs 02:** 01 keeps **one** agent in sync with **its own** workspace (edit-in-place GitOps loop);
-02 sends an agent *outward* to **other** workspaces (always creates). Iterating an agent → 01;
-replicating it elsewhere → 02.
+**01 vs 02:** 01 is the **dev loop** — keep **one** agent in sync with **its own** workspace
+(edit-in-place). 02 is **dev → prod promotion** — push a finished agent *outward* to **other**
+workspaces (always creates). Building/iterating an agent → 01; promoting it to prod → 02.
 
 ## Setup
 

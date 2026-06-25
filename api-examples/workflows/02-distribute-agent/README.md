@@ -1,16 +1,28 @@
-# 02 · Distribute / deploy an agent to other workspaces
+# 02 · Promote an agent from dev to prod (and other workspaces)
 
-> **Why this exists (vs [01-agent-gitops](../01-agent-gitops/)):** 02 sends an agent *outward* to
-> **other** workspaces — it always **creates** the agent in the target(s), and supports per-environment
-> config. 01 is the opposite: keep **one** agent in sync with **its own** workspace (update-in-place).
-> Rule of thumb: editing/iterating an agent → 01; replicating it elsewhere → 02.
+**The scenario this is for:** agent development happens in a **dev** workspace. Once an agent is ready,
+you promote it to a **prod** workspace — or to several prod/regional workspaces — **programmatically**,
+not by hand. 02 is that promotion path: take a finished agent and share it *outward* to other
+workspaces.
 
-Two related ways to get an agent into other workspaces:
+```
+   dev workspace  ──promote──►  prod workspace(s)
+   (build & iterate here, 01)   (02 creates the agent here)
+```
 
-- **`distribute.py`** — roll one *version-controlled* agent project out to many workspaces (**1 → N**),
-  each with its own configuration and secrets, driven by per-environment overlay files.
-- **`deploy.py`** — a one-shot, no-git deploy of a single package into one workspace: from an exported
-  zip, or copied straight from another workspace (cross-instance promotion / disaster recovery).
+> **Why this exists (vs [01-agent-gitops](../01-agent-gitops/)):** 01 keeps **one** agent in sync with
+> **its own** workspace — that's the dev loop where you build and iterate. 02 takes that agent and
+> **creates** it in **other** workspaces (dev → prod). Rule of thumb: *iterating* an agent → 01;
+> *promoting/replicating* it elsewhere → 02.
+
+Two ways to promote, depending on whether you keep the agent in git:
+
+- **`distribute.py`** — promote a *version-controlled* agent project to one or many target workspaces
+  (**1 → N**), each with its own per-environment config and secrets (e.g. a different model or
+  credentials in prod than dev), driven by overlay files.
+- **`deploy.py`** — a one-shot, no-git promotion of a single package into a target: from an exported
+  zip, or copied **straight from the dev workspace to prod** (cross-instance promotion / disaster
+  recovery).
 
 ## Model
 

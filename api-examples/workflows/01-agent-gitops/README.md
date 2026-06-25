@@ -2,10 +2,10 @@
 
 Version-control an agent in git and publish changes back to its workspace automatically.
 
-> **Why this exists (vs [02-distribute-agent](../02-distribute-agent/)):** 01 keeps **one** agent in
-> sync with **its own** workspace — `pull` it into git, edit, and `push` changes back to the *same*
-> agent (update-in-place: `edit → patch → publish`). Reach for 02 instead when you want to send an
-> agent *outward* to **other** workspaces.
+> **Why this exists (vs [02-distribute-agent](../02-distribute-agent/)):** 01 is the **dev loop** —
+> keep **one** agent in sync with **its own** workspace: `pull` it into git, edit, and `push` changes
+> back to the *same* agent (update-in-place: `edit → patch → publish`). Once it's ready, use 02 to
+> **promote it from dev to prod** (and other workspaces).
 
 ## The loop
 
