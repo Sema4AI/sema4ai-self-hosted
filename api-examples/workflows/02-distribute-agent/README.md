@@ -1,9 +1,14 @@
 # 02 · Distribute / deploy an agent to other workspaces
 
+> **Why this exists (vs [01-agent-gitops](../01-agent-gitops/)):** 02 sends an agent *outward* to
+> **other** workspaces — it always **creates** the agent in the target(s), and supports per-environment
+> config. 01 is the opposite: keep **one** agent in sync with **its own** workspace (update-in-place).
+> Rule of thumb: editing/iterating an agent → 01; replicating it elsewhere → 02.
+
 Two related ways to get an agent into other workspaces:
 
-- **`distribute.py`** — roll one *version-controlled* agent project out to many workspaces, each with
-  its own configuration and secrets, driven by per-environment overlay files.
+- **`distribute.py`** — roll one *version-controlled* agent project out to many workspaces (**1 → N**),
+  each with its own configuration and secrets, driven by per-environment overlay files.
 - **`deploy.py`** — a one-shot, no-git deploy of a single package into one workspace: from an exported
   zip, or copied straight from another workspace (cross-instance promotion / disaster recovery).
 

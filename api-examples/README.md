@@ -15,6 +15,10 @@ which is the authoritative reference.
 | 02 | [`distribute-agent`](workflows/02-distribute-agent/) | Distribute one agent to many workspaces (overlays + secrets), or one-shot deploy a package / copy across instances | First-deploy works |
 | 03 | [`clone-workspace`](workflows/03-clone-workspace/) | Replicate a "golden" workspace's configuration into another, via profiles ("poor man's Terraform") | Export + apply work |
 
+**01 vs 02:** 01 keeps **one** agent in sync with **its own** workspace (edit-in-place GitOps loop);
+02 sends an agent *outward* to **other** workspaces (always creates). Iterating an agent → 01;
+replicating it elsewhere → 02.
+
 ## Setup
 
 The scripts run with [uv](https://docs.astral.sh/uv/) (it is **not** bundled with Python — install it
