@@ -79,6 +79,52 @@ def _agent(spec: dict) -> dict:
     return spec["agent-package"]["agents"][0]
 
 
+def _validate(repo: Path) -> list[str]:
+    """Cheap local pre-flight: catch obvious breakage before talking to the API.
+
+    Covers what's checkable without the server (YAML parses, required structure,
+    referenced files exist). The API import is still the authority on semantics
+    (valid model names, enum values, etc.).
+    """
+    spec_path = repo / "agent-spec.yaml"
+    if not spec_path.is_file():
+        return [f"missing {spec_path.name}"]
+    try:
+        spec = yaml.safe_load(spec_path.read_text())
+    except yaml.YAMLError as exc:
+        return [f"agent-spec.yaml is not valid YAML: {exc}"]
+    try:
+        agent = _agent(spec)
+    except (TypeError, KeyError, IndexError):
+        return ["agent-spec.yaml: expected agent-package.agents[0]"]
+
+    errors: list[str] = []
+    if not agent.get("name"):
+        errors.append("agent-spec.yaml: agent 'name' is required")
+    runbook = agent.get("runbook", "runbook.md")
+    if not (repo / runbook).is_file():
+        errors.append(f"runbook file '{runbook}' (agent-spec.yaml) is missing")
+    for entry in agent.get("shared-files") or []:
+        ref = entry.get("file-ref") or entry.get("name")
+        if ref and not (repo / "agent-files" / ref).is_file():
+            errors.append(f"shared file 'agent-files/{ref}' is referenced but missing")
+    for entry in agent.get("semantic-data-models") or []:
+        nm = entry.get("name")
+        if nm and not (repo / "semantic-data-models" / nm).is_file():
+            errors.append(f"semantic data model 'semantic-data-models/{nm}' is referenced but missing")
+
+    target = repo / ".sema4" / "target.yaml"
+    if not target.is_file():
+        errors.append("missing .sema4/target.yaml (run pull.py to create it)")
+    else:
+        try:
+            if not (yaml.safe_load(target.read_text()) or {}).get("agent_id"):
+                errors.append(".sema4/target.yaml: 'agent_id' is required")
+        except yaml.YAMLError as exc:
+            errors.append(f".sema4/target.yaml is not valid YAML: {exc}")
+    return errors
+
+
 def _read_tree(root: Path) -> tuple[dict, str, dict[str, bytes]]:
     """Return (agent dict, runbook text, {shared-file name: bytes}) for an agent tree."""
     spec = yaml.safe_load((root / "agent-spec.yaml").read_text())
@@ -173,6 +219,14 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = Path(args.repo)
+
+    invalid = _validate(repo)
+    if invalid:
+        print(red(bold("  ✗ INVALID  ")) + dim("the agent repo has problems:"))
+        for item in invalid:
+            print(red(f"      • {item}"))
+        sys.exit(1)
+
     target = yaml.safe_load((repo / ".sema4" / "target.yaml").read_text())
     agent_id = target["agent_id"]
     client = SemaClient(load())

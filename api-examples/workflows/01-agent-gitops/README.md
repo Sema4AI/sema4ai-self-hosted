@@ -89,6 +89,10 @@ Changes that can't be applied in place yet (model, settings, welcome message, MC
 files) are reported and a `draft`/`live` run is refused, so a partial version is never published.
 Discard a test draft with the agent's `discard-draft` to return it to pristine.
 
+Before doing anything, `push.py` runs a local pre-flight on the repo (valid `agent-spec.yaml` YAML,
+required fields, referenced runbook/SDM/shared files present) and exits with a clear `✗ INVALID` message
+if you've hand-edited it into a broken state — so the PR's dryrun check catches mistakes early.
+
 ```sh
 uv run push.py --repo ~/agents/my-agent              # dryrun (default)
 uv run push.py --repo ~/agents/my-agent --mode draft
