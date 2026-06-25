@@ -84,18 +84,17 @@ any failed.
 
 ## One-shot deploy (deploy.py)
 
-No repo or overlays — just move a package into a target workspace:
+No repo or overlays — just move a package into a target workspace, naming workspaces by profile:
 
 ```sh
-# from a zip on disk
-uv run deploy.py --zip ./agent.zip \
-    --to-url https://b.app.sema4.ai/tenants/spar/api/v2 --to-key-env SEMA4_API_KEY_B
+# from a zip on disk, into a named target workspace
+uv run deploy.py --zip ./agent.zip --to-profile prod-eu --mode live
 
-# straight from another workspace (export source -> import target)
-uv run deploy.py --from-agent <id> \
-    --from-url https://a.app.sema4.ai/tenants/spar/api/v2 --from-key-env SEMA4_API_KEY_A \
-    --to-url   https://b.app.sema4.ai/tenants/spar/api/v2 --to-key-env   SEMA4_API_KEY_B
+# straight from one workspace to another (export source -> import target)
+uv run deploy.py --from-agent <id> --from-profile dev --to-profile prod-eu --mode live
 ```
+
+(Or give connections inline instead of profiles: `--to-url … --to-key-env …`, same for `--from-*`.)
 
 Creates a new agent in the target; `--mode live` publishes it (default stages a draft). For
 cross-workspace reference remapping (data-connection / MCP ids), use the publish endpoint's
