@@ -44,9 +44,10 @@ def main() -> None:
                           for a in agents], indent=2))
         return
 
-    # NOTE: `updated_at` is last-modified, the closest available proxy for "published at".
-    # A true publish timestamp is not exposed by the API yet.
-    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  {'VERSION':8}  LAST UPDATE")
+    # NOTE: the API only exposes the agent-spec's declared `version` (shown as SPEC VER), not the
+    # version of the currently-live published agent — and `updated_at` is last-modified, the closest
+    # proxy for "published at". Neither the live version nor a true publish time is available yet.
+    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  {'SPEC VER':8}  LAST UPDATE")
     for a in agents:
         name = a.get("name", "")
         if len(name) > 40:
