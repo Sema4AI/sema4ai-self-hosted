@@ -1,0 +1,11 @@
+# A second target workspace, with different config + secrets.
+base_url: https://us.app.sema4.ai/tenants/spar/api/v2
+api_key_env: SEMA4_API_KEY
+agent_id:
+
+overrides:
+  welcome-message: "Welcome (US)"
+
+secrets:
+  mcp-servers.0.headers.X-SMTP-Password.value: ${US_SMTP_PASSWORD}
+  mcp-servers.0.headers.X-SMTP-Username: ${US_SMTP_USERNAME}

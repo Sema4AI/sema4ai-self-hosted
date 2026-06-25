@@ -1,0 +1,12 @@
+# A target workspace for distribution (see workflows/05-distribute-agent).
+base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
+api_key_env: SEMA4_API_KEY            # env var holding this workspace's API key
+agent_id:                              # filled in on first deploy (written back here)
+
+overrides:                            # deep-merged onto the base agent-spec.yaml
+  model:
+    name: gpt-5-3-codex-high
+
+secrets:                              # dotted path into the agent -> ${ENV_VAR}
+  mcp-servers.0.headers.X-SMTP-Password.value: ${EU_SMTP_PASSWORD}
+  mcp-servers.0.headers.X-SMTP-Username: ${EU_SMTP_USERNAME}

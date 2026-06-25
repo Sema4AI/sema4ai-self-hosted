@@ -15,6 +15,7 @@ which is the authoritative reference.
 | 02 | [`deploy-to-new-workspace`](workflows/02-deploy-to-new-workspace/) | Seed an agent package into a new/empty workspace (first-time deploy) | Planned |
 | 03 | [`agent-endpoints`](workflows/03-agent-endpoints/) | Resolve an agent's external endpoints (MCP, work items) programmatically | Planned |
 | 04 | [`clone-workspace`](workflows/04-clone-workspace/) | Replicate a "golden" workspace's configuration into another ("poor man's Terraform") | Planned |
+| 05 | [`distribute-agent`](workflows/05-distribute-agent/) | Distribute one agent to many workspaces with per-environment overrides and secrets | First-deploy works |
 
 ## Setup
 

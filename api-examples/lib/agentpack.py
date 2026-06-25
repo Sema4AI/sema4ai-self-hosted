@@ -32,7 +32,8 @@ from pathlib import Path
 import yaml
 
 SPEC_NAME = "agent-spec.yaml"
-KEEP = {".git", ".sema4"}  # never wiped when refreshing a tree in place
+# Never wiped on unpack, never shipped inside a package on pack.
+KEEP = {".git", ".sema4", "environments"}
 
 
 def _agents(spec: dict) -> list:
