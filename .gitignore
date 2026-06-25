@@ -52,3 +52,7 @@ terraform.rc
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Sema4 api-examples: never commit secrets or live profiles
+*.secrets.env
+sema4-profiles.yaml

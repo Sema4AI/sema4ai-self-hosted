@@ -13,16 +13,26 @@ which is the authoritative reference.
 |---|----------|--------------|--------|
 | 01 | [`agent-gitops`](workflows/01-agent-gitops/) | Export an agent → version-control it in git → publish changes back to the workspace on push (GitHub Actions) | Flagship |
 | 02 | [`distribute-agent`](workflows/02-distribute-agent/) | Distribute one agent to many workspaces (overlays + secrets), or one-shot deploy a package / copy across instances | First-deploy works |
-| 03 | [`clone-workspace`](workflows/03-clone-workspace/) | Replicate a "golden" workspace's configuration into another ("poor man's Terraform") | Planned |
+| 03 | [`clone-workspace`](workflows/03-clone-workspace/) | Replicate a "golden" workspace's configuration into another, via profiles ("poor man's Terraform") | Export + apply work |
 
 ## Setup
 
-Every workflow reads the same two values from the environment:
+The scripts run with [uv](https://docs.astral.sh/uv/) (it is **not** bundled with Python — install it
+once):
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh    # or: brew install uv
+```
+
+Then point a tool at a workspace, either via env vars:
 
 ```sh
 cp .env.example .env
 # then edit .env
 ```
+
+…or, when you operate several workspaces, via named profiles (see
+[03-clone-workspace](workflows/03-clone-workspace/)) — every tool accepts `--profile`.
 
 | Variable | Example | Notes |
 |----------|---------|-------|
