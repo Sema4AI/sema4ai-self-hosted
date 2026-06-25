@@ -38,19 +38,22 @@ def main() -> None:
     agents.sort(key=lambda a: a.get("name", "").lower())
 
     if args.json:
-        print(json.dumps([{"id": a["id"], "name": a["name"], "state": a.get("state"),
-                           "version": a.get("version"), "live_version_id": a.get("live_version_id"),
-                           "updated_at": a.get("updated_at")}
+        print(json.dumps([{"name": a["name"], "id": a["id"], "state": a.get("state"),
+                           "version": a.get("version"), "updated_at": a.get("updated_at"),
+                           "live_version_id": a.get("live_version_id")}
                           for a in agents], indent=2))
         return
 
     # NOTE: `updated_at` is last-modified, the closest available proxy for "published at".
     # A true publish timestamp is not exposed by the API yet.
-    print(f"{'ID':36}  {'STATE':5}  {'VERSION':8}  {'UPDATED':16}  NAME")
+    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  {'VERSION':8}  LAST UPDATE")
     for a in agents:
+        name = a.get("name", "")
+        if len(name) > 40:
+            name = name[:39] + "…"
         updated = (a.get("updated_at") or "")[:16].replace("T", " ")
-        print(f"{a['id']:36}  {a.get('state', ''):5}  {(a.get('version') or '-'):8}  "
-              f"{updated:16}  {a.get('name', '')}")
+        print(f"{name:40}  {a['id']:36}  {a.get('state', ''):5}  "
+              f"{(a.get('version') or '-'):8}  {updated}")
     print(f"\n{len(agents)} agent(s).")
 
 
