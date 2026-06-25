@@ -1,4 +1,4 @@
-# A target workspace for distribution (see workflows/05-distribute-agent).
+# A target workspace for distribution (see workflows/02-distribute-agent).
 base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
 api_key_env: SEMA4_API_KEY            # env var holding this workspace's API key
 agent_id:                              # filled in on first deploy (written back here)

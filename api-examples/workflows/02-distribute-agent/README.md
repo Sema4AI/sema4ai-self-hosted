@@ -1,4 +1,4 @@
-# 05 · Distribute / deploy an agent to other workspaces
+# 02 · Distribute / deploy an agent to other workspaces
 
 Two related ways to get an agent into other workspaces:
 
@@ -85,7 +85,7 @@ environment: ${{ matrix.env }}
 steps:
   - uses: actions/checkout@v4
   - uses: astral-sh/setup-uv@v6
-  - run: uv run workflows/05-distribute-agent/distribute.py --repo . --env ${{ matrix.env }} --mode live
+  - run: uv run workflows/02-distribute-agent/distribute.py --repo . --env ${{ matrix.env }} --mode live
     env:
       SEMA4_API_KEY: ${{ secrets.SEMA4_API_KEY }}
       EU_SMTP_PASSWORD: ${{ secrets.EU_SMTP_PASSWORD }}

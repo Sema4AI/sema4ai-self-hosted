@@ -97,7 +97,7 @@ def pack(tree: Path) -> bytes:
     The tree must already be in the on-disk layout the import endpoint expects
     (shared files keyed by the manifest's file-ref) with any secrets resolved —
     callers that need per-environment values/secrets render them into the tree
-    first (see workflows/05-distribute-agent).
+    first (see workflows/02-distribute-agent).
     """
     spec = _load_spec(tree)
     buf = io.BytesIO()
