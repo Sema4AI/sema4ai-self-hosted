@@ -37,9 +37,10 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--agent-id", required=True, help="ID of the agent to export (see list-agents.py).")
     parser.add_argument("--dest", required=True, help="Directory to write the agent tree into.")
+    parser.add_argument("--profile", help="Workspace profile name (else SEMA4_* env).")
     args = parser.parse_args()
 
-    config = load()
+    config = load(args.profile)
     client = SemaClient(config)
     dest = Path(args.dest)
 

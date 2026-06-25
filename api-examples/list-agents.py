@@ -1,14 +1,14 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = []
+# dependencies = ["pyyaml>=6"]
 # ///
 """List the agents in the workspace and their ids.
 
-    uv run list-agents.py [--name <prefix>] [--state draft|live] [--json]
+    uv run list-agents.py [--name <prefix>] [--state draft|live] [--json] [--profile NAME]
 
 Handy for finding the --agent-id to pass to a workflow's pull.py.
-Reads SEMA4_BASE_URL and SEMA4_API_KEY from the environment (or ../.env).
+Targets a workspace via --profile, or SEMA4_BASE_URL / SEMA4_API_KEY (or ../.env).
 """
 
 from __future__ import annotations
@@ -30,9 +30,10 @@ def main() -> None:
     parser.add_argument("--name", help="Filter by name prefix (case-insensitive).")
     parser.add_argument("--state", choices=["draft", "live"], help="Filter by lifecycle state.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")
+    parser.add_argument("--profile", help="Workspace profile name (else SEMA4_* env).")
     args = parser.parse_args()
 
-    agents = [a for a in SemaClient(load()).list_agents(name=args.name)
+    agents = [a for a in SemaClient(load(args.profile)).list_agents(name=args.name)
               if not args.state or a.get("state") == args.state]
     agents.sort(key=lambda a: a.get("name", "").lower())
 

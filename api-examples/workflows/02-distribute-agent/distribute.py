@@ -46,7 +46,7 @@ import yaml  # noqa: E402
 
 from lib import agentpack  # noqa: E402
 from lib.client import ApiError, SemaClient  # noqa: E402
-from lib.config import Config  # noqa: E402
+from lib.config import Config, load  # noqa: E402
 
 
 # --- rendering ------------------------------------------------------------
@@ -139,11 +139,26 @@ def _write_back_agent_id(path: Path, agent_id: str) -> None:
 
 
 # --- deploy ---------------------------------------------------------------
-def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
+def _connect(name: str, env: dict) -> tuple[str, "callable"]:
+    """Return (base_url, make_client) from the overlay's `profile` or `base_url`+`api_key_env`."""
+    if env.get("profile"):
+        cfg = load(env["profile"])
+        return cfg.base_url, (lambda: SemaClient(cfg))
     base_url = env.get("base_url")
     if not base_url:
-        raise SystemExit(f"[{name}] base_url is required")
+        raise SystemExit(f"[{name}] set either 'profile' or 'base_url'")
     key_var = env.get("api_key_env", "SEMA4_API_KEY")
+
+    def make_client():
+        if key_var not in os.environ:
+            raise SystemExit(f"[{name}] API key env var '{key_var}' is not set")
+        return SemaClient(Config(base_url=base_url.rstrip("/"), api_key=os.environ[key_var]))
+
+    return base_url.rstrip("/"), make_client
+
+
+def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
+    base_url, make_client = _connect(name, env)
 
     if env.get("agent_id"):
         return f"skipped (already deployed as {env['agent_id']}; in-place update not available yet)"
@@ -153,9 +168,7 @@ def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
         ov = ", ".join((env.get("overrides") or {}).keys()) or "none"
         return f"would CREATE at {base_url} (overrides: {ov}; secrets: {n})"
 
-    if key_var not in os.environ:
-        raise SystemExit(f"[{name}] API key env var '{key_var}' is not set")
-    client = SemaClient(Config(base_url=base_url.rstrip("/"), api_key=os.environ[key_var]))
+    client = make_client()
 
     with tempfile.TemporaryDirectory() as tmp:
         _render(repo, env, Path(tmp))

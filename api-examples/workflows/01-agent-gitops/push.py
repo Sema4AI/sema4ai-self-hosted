@@ -216,6 +216,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
                         help="dryrun: preview only, no writes (default). "
                              "draft: stage for review. live: publish a new live version.")
+    parser.add_argument("--profile", help="Workspace profile name (else SEMA4_* env).")
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -229,7 +230,7 @@ def main() -> None:
 
     target = yaml.safe_load((repo / ".sema4" / "target.yaml").read_text())
     agent_id = target["agent_id"]
-    client = SemaClient(load())
+    client = SemaClient(load(args.profile))
 
     patch, name, blocking = _diff(repo, client, agent_id)
     runbook_diff: list[str] = []

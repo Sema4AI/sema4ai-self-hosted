@@ -23,8 +23,11 @@ agent-repo/
 Each overlay names a target workspace and how the agent differs there:
 
 ```yaml
-base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
-api_key_env: SEMA4_API_KEY            # env var holding that workspace's API key
+# connection — either reference a profile (recommended)…
+profile: prod-eu
+# …or set base_url + api_key_env inline:
+#   base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
+#   api_key_env: SEMA4_API_KEY
 agent_id:                              # filled in on first deploy (written back)
 
 overrides:                            # deep-merged onto agent-spec.yaml

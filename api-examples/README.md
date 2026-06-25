@@ -31,15 +31,32 @@ cp .env.example .env
 # then edit .env
 ```
 
-…or, when you operate several workspaces, via named profiles (see
-[03-clone-workspace](workflows/03-clone-workspace/)) — every tool accepts `--profile`.
-
 | Variable | Example | Notes |
 |----------|---------|-------|
 | `SEMA4_BASE_URL` | `https://<deployment>.app.sema4.ai/tenants/spar/api/v2` | Tenant path is always `tenants/spar`; only the deployment subdomain changes |
 | `SEMA4_API_KEY` | `s4w_...` | Sent as `Authorization: Bearer <key>` |
 
 Get an API key from your deployment's **Configuration → API keys** page.
+
+### Profiles (operating several workspaces)
+
+Instead of swapping the env vars per run, register the workspaces you operate once and target them by
+name. **Every tool accepts `--profile <name>`** (distribute overlays use a `profile:` key). Copy
+[`sema4-profiles.example.yaml`](sema4-profiles.example.yaml) to `sema4-profiles.yaml` (or
+`~/.sema4/profiles.yaml`, or point `$SEMA4_PROFILES` at it):
+
+```yaml
+profiles:
+  golden:  { base_url: https://darkside.app.sema4.ai/tenants/spar/api/v2, api_key: ${GOLDEN_API_KEY} }
+  prod-eu: { base_url: https://eu.app.sema4.ai/tenants/spar/api/v2,       api_key: ${EU_API_KEY} }
+```
+
+`api_key` uses `${ENV}` refs so the file holds no literal secrets. Then, e.g.:
+
+```sh
+uv run list-agents.py --profile golden
+uv run workflows/03-clone-workspace/apply.py --profile prod-eu --file workspace.yaml
+```
 
 To find an agent's id (e.g. to pass to a workflow's `pull.py`):
 
@@ -51,9 +68,10 @@ uv run list-agents.py --name "All"     # filter by name prefix; also --state, --
 
 ```
 api-examples/
-  list-agents.py   helper: list agents and their ids
-  lib/             shared helpers (HTTP client, agent zip<->tree packing)
-  workflows/       one directory per use case (scripts, READMEs, GitHub Actions)
+  list-agents.py               helper: list agents and their ids
+  sema4-profiles.example.yaml  template for the workspace profiles registry
+  lib/                         shared helpers (HTTP client, agent zip<->tree packing, config/profiles)
+  workflows/                   one directory per use case (scripts, READMEs, GitHub Actions)
 ```
 
 The shared `lib/` keeps the cross-cutting logic — pagination, the agent zip ↔ flat-tree round-trip —

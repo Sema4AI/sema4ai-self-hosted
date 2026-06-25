@@ -7,8 +7,8 @@ Two ways to point a tool at a workspace:
      found via $SEMA4_PROFILES, ./sema4-profiles.yaml, or ~/.sema4/profiles.yaml:
 
          profiles:
-           golden:  { base_url: https://a.../api/v2, api_key: ${GOLDEN_KEY} }
-           prod-eu: { base_url: https://eu.../api/v2, api_key: ${EU_KEY},
+           golden:  { base_url: https://a.../api/v2, api_key: ${GOLDEN_API_KEY} }
+           prod-eu: { base_url: https://eu.../api/v2, api_key: ${EU_API_KEY},
                       secrets: prod-eu.secrets.env }     # optional, auto-loaded on apply
 
      api_key / base_url may use ${ENV} refs so the file stays free of literal secrets.
