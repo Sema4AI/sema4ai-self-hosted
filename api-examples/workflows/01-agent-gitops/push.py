@@ -126,12 +126,21 @@ def _validate(repo: Path) -> list[str]:
 
 
 def _read_tree(root: Path) -> tuple[dict, str, dict[str, bytes]]:
-    """Return (agent dict, runbook text, {shared-file name: bytes}) for an agent tree."""
+    """Return (agent dict, runbook text, {relative path: bytes}) for an agent tree.
+
+    Fingerprints both agent-files and semantic-data-models so that editing a file's
+    contents is detected even when the manifest entry (name) is unchanged.
+    """
     spec = yaml.safe_load((root / "agent-spec.yaml").read_text())
     agent = _agent(spec)
     runbook = (root / agent.get("runbook", "runbook.md")).read_text()
-    files_dir = root / "agent-files"
-    files = {p.name: p.read_bytes() for p in files_dir.iterdir()} if files_dir.is_dir() else {}
+    files: dict[str, bytes] = {}
+    for sub in ("agent-files", "semantic-data-models"):
+        directory = root / sub
+        if directory.is_dir():
+            for path in directory.iterdir():
+                if path.is_file():
+                    files[f"{sub}/{path.name}"] = path.read_bytes()
     return agent, runbook, files
 
 
@@ -160,9 +169,9 @@ def _diff(repo: Path, client: SemaClient, agent_id: str) -> tuple[dict, str, lis
             continue
         if want_agent.get(key) != have_agent.get(key):
             blocking.append(f"agent-spec.yaml: {key}")
-    for name in sorted(set(want_files) | set(have_files)):
-        if want_files.get(name) != have_files.get(name):
-            blocking.append(f"agent-files/{name}")
+    for rel in sorted(set(want_files) | set(have_files)):
+        if want_files.get(rel) != have_files.get(rel):
+            blocking.append(rel)
 
     return patch, have_agent.get("name", ""), blocking
 

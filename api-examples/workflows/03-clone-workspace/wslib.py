@@ -12,7 +12,8 @@ import re
 
 # Substrings that mark a config key as holding a secret value.
 SECRET_HINTS = ("password", "secret", "api_key", "apikey", "access_key",
-                "token", "private_key", "client_secret", "passwd")
+                "token", "private_key", "client_secret", "passwd",
+                "authorization", "bearer", "cookie", "credential")
 
 # Value patterns that are secrets regardless of the key name (e.g. an AWS key stored
 # as an SMTP username). Mirrors what secret scanners flag — the last line of defense.
@@ -24,6 +25,7 @@ _SECRET_VALUE = re.compile(
     r"|xox[baprs]-[0-9A-Za-z-]{10,}"   # Slack
     r"|gh[pousr]_[A-Za-z0-9]{36,}"     # GitHub tokens
     r"|github_pat_[A-Za-z0-9_]{40,}"
+    r"|eyJ[A-Za-z0-9_=-]{8,}\.[A-Za-z0-9_=-]{8,}\.[A-Za-z0-9_=-]+"  # JWT (e.g. Bearer tokens)
 )
 
 _PLACEHOLDER = re.compile(r"\$\{(\w+)\}")  # ${NAME} — note: ${env:..} (platform) won't match

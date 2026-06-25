@@ -54,5 +54,6 @@ __pycache__/
 *.pyc
 
 # Sema4 api-examples: never commit secrets or live profiles
+.env
 *.secrets.env
 sema4-profiles.yaml

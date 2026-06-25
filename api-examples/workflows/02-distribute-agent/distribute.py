@@ -175,15 +175,18 @@ def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
         created = client.import_agent(agentpack.pack(Path(tmp)), filename=f"{name}.zip")
 
     agent_id = created["id"]
-    if path is not None:                     # overlay-based targets record the new id
-        _write_back_agent_id(path, agent_id)
     result = f"created {agent_id}"
 
     if mode == "live":
+        # Publish before recording agent_id, so a publish failure doesn't leave the overlay
+        # marked "already deployed" (which would skip the retry on the next run).
         state = client.get_agent_state(agent_id)
         if state["state"] != "live" or state["has_draft"]:
             client.publish_agent(agent_id)
         result += " and published live"
+
+    if path is not None:                     # overlay-based targets record the new id
+        _write_back_agent_id(path, agent_id)
     return result
 
 
