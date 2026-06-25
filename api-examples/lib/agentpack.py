@@ -9,10 +9,11 @@ An export zip looks like:
 
 For version control we want a tree that diffs cleanly. Two transforms matter:
 
-  1. Shared files: on UNPACK, rename each `agent-files/<uuid>` blob to its human
-     name from the manifest (e.g. agent-files/orders.xlsx) and rewrite the
-     manifest's file-ref to that name, so git diffs are legible and the tree is
-     self-consistent. PACK preserves that naming.
+  1. Shared files: the export stores blobs under an opaque UUID and the import
+     requires that UUID as the `file-ref`. On UNPACK we keep `file-ref` as the
+     UUID (so PACK can restore the exact import layout) but rename the blob on
+     disk to its human name and point the manifest's `name` at it — so git diffs
+     are legible. PACK writes each blob back under its `file-ref` UUID.
 
   2. Secrets: exports redact secret values (e.g. MCP headers -> '**********').
      On PACK, real values are injected from the environment so the package is
@@ -83,37 +84,33 @@ def unpack(zip_bytes: bytes, dest: Path) -> None:
             used.add(candidate)
             if ref and ref != candidate and (files_dir / ref).exists():
                 (files_dir / ref).rename(files_dir / candidate)
-            entry["file-ref"] = candidate
+            # keep file-ref as the UUID (import needs it); name = on-disk filename
+            entry["name"] = candidate
     _dump_spec(dest, spec)
 
 
 def pack(tree: Path) -> bytes:
     """Re-zip a tree back into the import package format and return the bytes.
 
-    The tree is already in the on-disk layout the import endpoint expects (shared
-    files keyed by the manifest's file-ref). Secret injection happens here.
+    The tree must already be in the on-disk layout the import endpoint expects
+    (shared files keyed by the manifest's file-ref) with any secrets resolved —
+    callers that need per-environment values/secrets render them into the tree
+    first (see workflows/05-distribute-agent).
     """
     spec = _load_spec(tree)
-    _inject_secrets(spec)
-
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(SPEC_NAME, yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
         for path in sorted(tree.rglob("*")):
-            if path.is_dir() or path.name == SPEC_NAME:
+            if path.is_dir():
                 continue
             rel = path.relative_to(tree)
-            if rel.parts[0] in KEEP:
-                continue
+            if rel.parts[0] in KEEP or rel.parts[0] == "agent-files":
+                continue  # shared files are written below, under their UUID file-ref
             zf.write(path, rel.as_posix())
+        # shared files: human name on disk -> UUID file-ref in the package
+        for agent in _agents(spec):
+            for entry in agent.get("shared-files") or []:
+                src = tree / "agent-files" / (entry.get("name") or "")
+                if entry.get("file-ref") and src.is_file():
+                    zf.write(src, f"agent-files/{entry['file-ref']}")
     return buf.getvalue()
-
-
-def _inject_secrets(spec: dict) -> None:
-    """Replace redacted secret values ('**********') with real ones.
-
-    TODO: resolve each masked secret from the environment by a documented naming
-    convention and substitute it in place. Left as a hook until the deploy
-    (whole-package upsert) path is built.
-    """
-    return

@@ -105,9 +105,9 @@ def _validate(repo: Path) -> list[str]:
     if not (repo / runbook).is_file():
         errors.append(f"runbook file '{runbook}' (agent-spec.yaml) is missing")
     for entry in agent.get("shared-files") or []:
-        ref = entry.get("file-ref") or entry.get("name")
-        if ref and not (repo / "agent-files" / ref).is_file():
-            errors.append(f"shared file 'agent-files/{ref}' is referenced but missing")
+        nm = entry.get("name")
+        if nm and not (repo / "agent-files" / nm).is_file():
+            errors.append(f"shared file 'agent-files/{nm}' is referenced but missing")
     for entry in agent.get("semantic-data-models") or []:
         nm = entry.get("name")
         if nm and not (repo / "semantic-data-models" / nm).is_file():
