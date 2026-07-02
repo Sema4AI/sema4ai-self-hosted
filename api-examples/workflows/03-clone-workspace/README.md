@@ -33,8 +33,8 @@ in a profiles file (`./sema4-profiles.yaml`, `~/.sema4/profiles.yaml`, or `$SEMA
 
 ```yaml
 profiles:
-  golden:  { base_url: https://darkside.app.sema4.ai/tenants/spar/api/v2, api_key: ${GOLDEN_API_KEY} }
-  new-eu:  { base_url: https://eu.app.sema4.ai/tenants/spar/api/v2,       api_key: ${EU_API_KEY},
+  golden:  { base_url: https://darkside.app.sema4.ai/api/v2, api_key: ${GOLDEN_API_KEY} }
+  new-eu:  { base_url: https://eu.app.sema4.ai/api/v2,       api_key: ${EU_API_KEY},
              secrets: new-eu.secrets.env }
 ```
 

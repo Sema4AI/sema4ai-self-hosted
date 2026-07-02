@@ -37,7 +37,7 @@ cp .env.example .env
 
 | Variable | Example | Notes |
 |----------|---------|-------|
-| `SEMA4_BASE_URL` | `https://<deployment>.app.sema4.ai/tenants/spar/api/v2` | Tenant path is always `tenants/spar`; only the deployment subdomain changes |
+| `SEMA4_BASE_URL` | `https://<deployment>.app.sema4.ai/api/v2` | Your deployment's v2 API base URL |
 | `SEMA4_API_KEY` | `s4w_...` | Sent as `Authorization: Bearer <key>` |
 
 Get an API key from your deployment's **Configuration → API keys** page.
@@ -51,8 +51,8 @@ name. **Every tool accepts `--profile <name>`** (distribute overlays use a `prof
 
 ```yaml
 profiles:
-  golden:  { base_url: https://darkside.app.sema4.ai/tenants/spar/api/v2, api_key: ${GOLDEN_API_KEY} }
-  prod-eu: { base_url: https://eu.app.sema4.ai/tenants/spar/api/v2,       api_key: ${EU_API_KEY} }
+  golden:  { base_url: https://darkside.app.sema4.ai/api/v2, api_key: ${GOLDEN_API_KEY} }
+  prod-eu: { base_url: https://eu.app.sema4.ai/api/v2,       api_key: ${EU_API_KEY} }
 ```
 
 `api_key` uses `${ENV}` refs so the file holds no literal secrets. Then, e.g.:

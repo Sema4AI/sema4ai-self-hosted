@@ -9,7 +9,7 @@
 
 Each target workspace is described by an overlay in <repo>/.sema4/environments/<name>.yaml:
 
-    base_url: https://eu.app.sema4.ai/tenants/spar/api/v2
+    base_url: https://eu.app.sema4.ai/api/v2
     api_key_env: SEMA4_API_KEY          # env var holding that workspace's API key
     agent_id:                            # filled in on first deploy (written back)
     overrides:                           # deep-merged onto the base agent-spec.yaml
