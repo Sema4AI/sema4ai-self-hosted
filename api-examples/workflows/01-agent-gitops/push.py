@@ -6,27 +6,19 @@
 """Reconcile a git-tracked agent repo onto its live agent and publish.
 
     uv run push.py --repo ./my-agent                 # --mode dryrun (default): preview only
-    uv run push.py --repo ./my-agent --mode draft    # stage for review
-    uv run push.py --repo ./my-agent --mode live     # publish a new live version
+    uv run push.py --repo ./my-agent --mode draft    # import into the agent's draft
+    uv run push.py --repo ./my-agent --mode live     # import + publish a new live version
 
-Compares the repo against the agent's actual current state (by exporting it) — no
-git diffing, no flags to remember. Whatever differs is detected automatically.
+Applies the whole package via `PUT /agents/{id}/import`, so any change is carried —
+runbook, name/description, model, settings, welcome message, SDMs, and shared files.
+The import creates/updates the agent's DRAFT; the live version stays until you publish.
+MCP servers are matched to existing workspace servers by name+URL and attached; any
+unresolved ones are reported so you can create + attach them.
 
 Steps:
-  1. Read .sema4/target.yaml -> agent_id.
-  2. Export the live agent and compare it to the repo:
-       - name / description / runbook_text  -> applied via PATCH
-       - any other field that differs (model, agent-settings, welcome-message,
-         document-intelligence, mcp-servers, semantic-data-models, shared files)
-         can't be applied in place yet -> reported and the run is refused, so a
-         partial version is never published.
-  3. POST /agents/{id}/edit -> DRAFT (skipped if the lifecycle flag is off).
-  4. PATCH the supported fields.
-  5. --mode live: POST /agents/{id}/publish.  --mode draft: stop, leaving the
-     change staged for UI review.
-
---mode dryrun (the default) stops after step 2: it prints what would change
-without calling any write endpoint.
+  1. Read .sema4/target.yaml -> agent_id (+ home profile).
+  2. dryrun: export the live agent, compare to the repo, and print what would change.
+  3. draft/live: pack the repo and PUT it into the agent's draft; live also publishes.
 """
 
 from __future__ import annotations
@@ -45,9 +37,6 @@ import yaml  # noqa: E402
 from lib import agentpack  # noqa: E402
 from lib.client import ApiError, SemaClient  # noqa: E402
 from lib.config import load  # noqa: E402
-
-# Spec fields push.py can apply to an existing agent today (runbook handled via its file).
-SUPPORTED_SPEC_FIELDS = {"name", "description", "runbook"}
 
 _COLOR = ((sys.stdout.isatty() or os.environ.get("FORCE_COLOR"))
           and os.environ.get("NO_COLOR") is None)
@@ -80,12 +69,7 @@ def _agent(spec: dict) -> dict:
 
 
 def _validate(repo: Path) -> list[str]:
-    """Cheap local pre-flight: catch obvious breakage before talking to the API.
-
-    Covers what's checkable without the server (YAML parses, required structure,
-    referenced files exist). The API import is still the authority on semantics
-    (valid model names, enum values, etc.).
-    """
+    """Cheap local pre-flight: catch obvious breakage before talking to the API."""
     spec_path = repo / "agent-spec.yaml"
     if not spec_path.is_file():
         return [f"missing {spec_path.name}"]
@@ -128,8 +112,8 @@ def _validate(repo: Path) -> list[str]:
 def _read_tree(root: Path) -> tuple[dict, str, dict[str, bytes]]:
     """Return (agent dict, runbook text, {relative path: bytes}) for an agent tree.
 
-    Fingerprints both agent-files and semantic-data-models so that editing a file's
-    contents is detected even when the manifest entry (name) is unchanged.
+    Fingerprints both agent-files and semantic-data-models so file-content edits are
+    detected even when the manifest entry (name) is unchanged.
     """
     spec = yaml.safe_load((root / "agent-spec.yaml").read_text())
     agent = _agent(spec)
@@ -144,78 +128,71 @@ def _read_tree(root: Path) -> tuple[dict, str, dict[str, bytes]]:
     return agent, runbook, files
 
 
-def _diff(repo: Path, client: SemaClient, agent_id: str) -> tuple[dict, str, list[str]]:
-    """Compare repo desired-state to the live agent's actual state.
+def _changes(repo: Path, client: SemaClient, agent_id: str) -> tuple[list, str]:
+    """Compare the repo to the live agent. Returns (changes, live_name).
 
-    Returns (patch, current_name, blocking) where patch holds the applicable field
-    changes and blocking lists changes that can't be applied in place yet.
+    Each change is (label, detail_lines). Everything is applicable via PUT import,
+    so there is no "blocked" category.
     """
     want_agent, want_runbook, want_files = _read_tree(repo)
     with tempfile.TemporaryDirectory() as tmp:
         agentpack.unpack(client.export_agent(agent_id), Path(tmp))
         have_agent, have_runbook, have_files = _read_tree(Path(tmp))
 
-    patch: dict = {}
-    if want_agent.get("name") != have_agent.get("name"):
-        patch["name"] = want_agent.get("name")
-    if want_agent.get("description") != have_agent.get("description"):
-        patch["description"] = want_agent.get("description")
-    if want_runbook != have_runbook:
-        patch["runbook_text"] = want_runbook
-
-    blocking: list[str] = []
+    changes: list = []
     for key in sorted(set(want_agent) | set(have_agent)):
-        if key in SUPPORTED_SPEC_FIELDS:
-            continue
+        if key == "runbook":
+            continue  # compared as a file below
         if want_agent.get(key) != have_agent.get(key):
-            blocking.append(f"agent-spec.yaml: {key}")
+            changes.append((f"agent-spec: {key}", None))
+    if want_runbook != have_runbook:
+        diff = [ln for ln in difflib.unified_diff(
+            str(have_runbook).splitlines(), str(want_runbook).splitlines(),
+            lineterm="") if not ln.startswith(("---", "+++"))]
+        changes.append(("runbook.md", diff))
     for rel in sorted(set(want_files) | set(have_files)):
         if want_files.get(rel) != have_files.get(rel):
-            blocking.append(rel)
+            verb = "add" if rel not in have_files else "update"
+            changes.append((f"{rel} ({verb})", None))
+    return changes, have_agent.get("name", "")
 
-    return patch, have_agent.get("name", ""), blocking
 
-
-def _report(name: str, patch: dict, runbook_diff: list[str], blocking: list[str],
-            pending_draft: bool) -> None:
-    """Print the comparison and how to apply it, in clear sections (no writes)."""
+def _report(name: str, changes: list) -> None:
     print()
-    print(bold(f"  DRY RUN  ") + dim(f"agent '{name}' · no changes made"))
+    print(bold("  DRY RUN  ") + dim(f"agent '{name}' · no changes made"))
     print(RULE)
-
-    if not patch and not blocking:
-        print(dim("  No differences — the agent already matches the repo."))
-
-    if patch:
-        print(green(bold(f"  ✓ WILL APPLY  ({len(patch)})")))
-        for field in patch:
-            if field == "runbook_text":
-                print(f"      • runbook_text")
-                for line in runbook_diff:
-                    if line.startswith(("---", "+++")):
-                        continue
-                    print("          " + _diff_line(line))
-            else:
-                print(f"      • {field}  →  {patch[field]!r}")
-        print()
-
-    if blocking:
-        print(red(bold(f"  ✗ BLOCKED  ({len(blocking)})")) + dim("  can't be applied to a live agent yet"))
-        for item in blocking:
-            print(red(f"      • {item}"))
-        print()
-
+    if not changes:
+        print(dim("  In sync — the agent already matches the repo."))
+    else:
+        print(green(bold(f"  ✓ WILL APPLY  ({len(changes)})")))
+        for label, detail in changes:
+            print(f"      • {label}")
+            for line in (detail or []):
+                print("          " + _diff_line(line))
     print(RULE)
-    if blocking:
-        print(dim("  Preview · ") + red(bold("a real run would be REFUSED")) +
-              " (--mode draft/live) until the blocked changes above are removed.")
-    elif patch or pending_draft:
-        extra = "" if patch else dim("  (a draft is already staged)")
-        print(dim("  Preview · ") + "re-run with " + bold("--mode draft") + " to stage or " +
-              bold("--mode live") + " to publish." + extra)
+    if changes:
+        print(dim("  Preview · ") + "re-run with " + bold("--mode draft") +
+              " to stage or " + bold("--mode live") + " to publish.")
     else:
         print(dim("  Preview · nothing to apply."))
+    print(dim("  MCP servers are matched to existing workspace servers on import; "
+              "unresolved ones are reported on apply."))
     print()
+
+
+def _apply(client: SemaClient, agent_id: str, repo: Path, mode: str) -> None:
+    result = client.update_import(agent_id, agentpack.pack(repo))
+    print(green(bold("  ✓ IMPORTED  ")) + f"updated the draft of '{result.get('name', '')}'")
+
+    for mcp in result.get("unresolved_mcp_servers") or []:
+        print(yellow(f"      ⚠ unresolved MCP server: {mcp.get('name')} "
+                     f"({mcp.get('url') or 'no url'}) — create + attach it in the workspace"))
+
+    if mode == "live":
+        client.publish_agent(agent_id)
+        print(green(bold("  ✓ PUBLISHED  ")) + "a new live version.")
+    else:
+        print(yellow(bold("  ✓ STAGED  ")) + "as a draft — review and publish in the UI.")
 
 
 def main() -> None:
@@ -224,12 +201,11 @@ def main() -> None:
     parser.add_argument("--repo", required=True, help="Path to the git-tracked agent repo.")
     parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
                         help="dryrun: preview only, no writes (default). "
-                             "draft: stage for review. live: publish a new live version.")
-    parser.add_argument("--profile", help="Workspace profile name (else SEMA4_* env).")
+                             "draft: import into the draft. live: import + publish.")
+    parser.add_argument("--profile", help="Workspace profile name (else target.yaml's, else env).")
     args = parser.parse_args()
 
     repo = Path(args.repo)
-
     invalid = _validate(repo)
     if invalid:
         print(red(bold("  ✗ INVALID  ")) + dim("the agent repo has problems:"))
@@ -239,54 +215,14 @@ def main() -> None:
 
     target = yaml.safe_load((repo / ".sema4" / "target.yaml").read_text())
     agent_id = target["agent_id"]
-    # connection precedence: --profile flag > target.yaml's profile > env
     client = SemaClient(load(args.profile or target.get("profile")))
 
-    patch, name, blocking = _diff(repo, client, agent_id)
-    runbook_diff: list[str] = []
-    if "runbook_text" in patch:
-        # recompute the unified diff for display
-        _, want_runbook, _ = _read_tree(repo)
-        current = client.get_agent(agent_id).get("runbook_text") or ""
-        runbook_diff = list(difflib.unified_diff(
-            str(current).splitlines(), str(want_runbook).splitlines(),
-            fromfile="live", tofile="repo", lineterm=""))
-
-    # Lifecycle support + whether a draft is already staged.
-    try:
-        lifecycle = True
-        pending_draft = bool(client.get_agent_state(agent_id).get("has_draft"))
-    except ApiError:
-        lifecycle, pending_draft = False, False
-
     if args.mode == "dryrun":
-        _report(name, patch, runbook_diff, blocking, pending_draft)
+        changes, name = _changes(repo, client, agent_id)
+        _report(name, changes)
         return
 
-    if blocking:
-        print(red(bold(f"  ✗ REFUSED  ({len(blocking)})")) + dim("  these can't be applied to a live agent yet:"))
-        for item in blocking:
-            print(red(f"      • {item}"))
-        sys.exit(1)
-
-    if not patch and not (args.mode == "live" and pending_draft):
-        print(dim("Nothing to apply — agent already matches the repo."))
-        return
-
-    if patch:
-        print(green(bold("  ✓ APPLYING  ")) + f"{', '.join(patch)}")
-        if lifecycle:
-            client.edit_agent(agent_id)
-        client.patch_agent(agent_id, **patch)
-
-    if args.mode == "live":
-        if lifecycle:
-            client.publish_agent(agent_id)
-            print(green(bold("  ✓ PUBLISHED  ")) + "a new live version.")
-        else:
-            print(green(bold("  ✓ APPLIED  ")) + "directly (lifecycle flag off).")
-    else:
-        print(yellow(bold("  ✓ STAGED  ")) + "as a draft — review and publish in the UI.")
+    _apply(client, agent_id, repo, args.mode)
 
 
 if __name__ == "__main__":

@@ -3,9 +3,9 @@
 Version-control an agent in git and publish changes back to its workspace automatically.
 
 > **Why this exists (vs [02-distribute-agent](../02-distribute-agent/)):** 01 is the **dev loop** —
-> keep **one** agent in sync with **its own** workspace: `pull` it into git, edit, and `push` changes
-> back to the *same* agent (update-in-place: `edit → patch → publish`). Once it's ready, use 02 to
-> **promote it from dev to prod** (and other workspaces).
+> keep **one** agent in sync with **its own** workspace: `pull` it into git, edit, and `push` the whole
+> package back to the *same* agent (`PUT /import` into its draft, then publish). Once it's ready, use 02
+> to **promote it from dev to prod** (and other workspaces).
 
 ## The loop
 
@@ -26,9 +26,9 @@ Version-control an agent in git and publish changes back to its workspace automa
    `.sema4/target.yaml` recording the agent id and its **home** workspace (`profile:` if you pulled
    with one). `push.py` reads that profile automatically, so you don't repeat `--profile` each run.
 2. **Edit** — change `runbook.md` (or other config) in any editor, commit, push.
-3. **Publish** — a GitHub Action runs `push.py`, which compares the repo against the live agent and
-   reconciles the difference (`edit` → apply → optionally `publish`), as either a **draft** or an
-   **immediately live** version.
+3. **Publish** — a GitHub Action runs `push.py`, which imports the packaged repo into the agent
+   (`PUT /agents/{id}/import`) and optionally publishes it, as either a **draft** or an **immediately
+   live** version.
 
 ## Two repos
 
@@ -42,19 +42,16 @@ All tool metadata lives under the repo's `.sema4/`: `target.yaml` (this agent's 
 here) and optionally `environments/` (its **promotion targets**, used by
 [02-distribute-agent](../02-distribute-agent/)). Both reference workspaces by profile.
 
-## What push.py applies today
+## What push.py applies
 
-| Edit | Result |
-|------|--------|
-| `runbook.md` | ✓ applied (`PATCH` runbook_text) |
-| name / description | ✓ applied (`PATCH`) |
-| everything else — model, agent settings, welcome message, document intelligence, MCP servers, SDMs, shared files | ✗ refused |
+`push.py` sends the whole package via `PUT /agents/{id}/import`, so **every part of the agent is
+carried** — runbook, name/description, model, agent settings, welcome message, document intelligence,
+SDMs, and shared files. The import creates/updates the agent's **draft**; the live version stays until
+you publish (`--mode live`). Shared files are add-only (import never deletes).
 
-`push.py` only reconciles the fields the API can patch on an existing agent. Any other edit is detected
-and the run is **refused with a clear message** rather than publishing a partially-applied version
-(those fields otherwise only enter via create-import). Some of them — e.g. MCP server and SDM
-attach/detach — do have API endpoints and could be reconciled in a future version; today they are
-blocked.
+**MCP servers** are matched to servers that already exist in the target workspace by case-insensitive
+**name + URL** and attached; packages carry no secrets, so any server with no match is reported as
+*unresolved* — create it in the workspace and attach it, then re-run.
 
 ## Draft vs live
 
@@ -88,16 +85,14 @@ diff), so any change is detected automatically — no flags required.
 
 It has three modes via `--mode`:
 
-- **`dryrun`** (default) — preview only; prints what would be applied (a unified diff for the runbook)
-  and what is blocked, calling no write endpoints.
-- **`draft`** — stages the change for review (the live version is untouched).
-- **`live`** — applies the change and publishes a new live version. Running `--mode live` when a draft
-  is already staged (e.g. from an earlier `--mode draft` run) publishes that pending draft even if the
-  repo adds no new diff.
+- **`dryrun`** (default) — preview only; exports the live agent, compares it to the repo, and prints
+  every change that would apply (a unified diff for the runbook). No write endpoints are called.
+- **`draft`** — imports the package into the agent's draft (`PUT /import`); the live version is untouched.
+- **`live`** — imports into the draft and publishes a new live version.
 
-Changes that can't be applied in place yet (model, settings, welcome message, MCP servers, shared
-files) are reported and a `draft`/`live` run is refused, so a partial version is never published.
-Discard a test draft with the agent's `discard-draft` to return it to pristine.
+Everything in the package is applied (see [What push.py applies](#what-pushpy-applies)); any unresolved
+MCP servers are reported so you can create + attach them. Discard a test draft with the agent's
+`discard-draft` to return it to pristine.
 
 Before doing anything, `push.py` runs a local pre-flight on the repo (valid `agent-spec.yaml` YAML,
 required fields, referenced runbook/SDM/shared files present) and exits with a clear `✗ INVALID` message

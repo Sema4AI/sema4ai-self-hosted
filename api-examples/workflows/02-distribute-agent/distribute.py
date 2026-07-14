@@ -22,12 +22,14 @@ Each target workspace is described by an overlay in <repo>/.sema4/environments/<
 
 For each target: render (base + overrides + injected secrets) -> pack -> deploy.
 
-  - First deploy (no agent_id): create the agent (POST /agents/import), record its
-    id back into the overlay, and publish if --mode live.
-  - Already deployed (agent_id present): skipped — updating an existing agent in
-    place needs the replace-import route, which is not available yet.
+  - First deploy (no agent_id): create the agent (POST /agents/import) and record
+    its id back into the overlay.
+  - Already deployed (agent_id present): converge it in place (PUT /agents/{id}/import).
+  - --mode live also publishes the resulting draft.
 
-Secrets are resolved from the environment at deploy time and never read from git.
+MCP servers are matched to existing workspace servers by name+URL and attached;
+unresolved ones are reported per target. Secrets are resolved from the environment
+at deploy time and never read from git.
 """
 
 from __future__ import annotations
@@ -159,33 +161,37 @@ def _connect(name: str, env: dict) -> tuple[str, "callable"]:
 
 def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
     base_url, make_client = _connect(name, env)
-
-    if env.get("agent_id"):
-        return f"skipped (already deployed as {env['agent_id']}; in-place update not available yet)"
+    existing_id = env.get("agent_id")
 
     if mode == "dryrun":
+        action = "UPDATE" if existing_id else "CREATE"
         n = len(env.get("secrets") or {})
         ov = ", ".join((env.get("overrides") or {}).keys()) or "none"
-        return f"would CREATE at {base_url} (overrides: {ov}; secrets: {n})"
+        return f"would {action} at {base_url} (overrides: {ov}; secrets: {n})"
 
     client = make_client()
-
     with tempfile.TemporaryDirectory() as tmp:
         _render(repo, env, Path(tmp))
-        created = client.import_agent(agentpack.pack(Path(tmp)), filename=f"{name}.zip")
+        zip_bytes = agentpack.pack(Path(tmp))
+        if existing_id:                       # converge an already-deployed target (PUT)
+            imported = client.update_import(existing_id, zip_bytes, filename=f"{name}.zip")
+            agent_id, verb = existing_id, "updated"
+        else:                                 # first deploy (create)
+            imported = client.import_agent(zip_bytes, filename=f"{name}.zip")
+            agent_id, verb = imported["id"], "created"
 
-    agent_id = created["id"]
-    result = f"created {agent_id}"
+    result = f"{verb} {agent_id}"
+    unresolved = imported.get("unresolved_mcp_servers") or []
+    if unresolved:
+        result += f" ({len(unresolved)} unresolved MCP)"
 
     if mode == "live":
-        # Publish before recording agent_id, so a publish failure doesn't leave the overlay
-        # marked "already deployed" (which would skip the retry on the next run).
         state = client.get_agent_state(agent_id)
         if state["state"] != "live" or state["has_draft"]:
             client.publish_agent(agent_id)
         result += " and published live"
 
-    if path is not None:                     # overlay-based targets record the new id
+    if path is not None and not existing_id:  # record the new id on first deploy
         _write_back_agent_id(path, agent_id)
     return result
 
@@ -211,8 +217,8 @@ def main() -> None:
 
     base = yaml.safe_load((repo / "agent-spec.yaml").read_text())
     if base["agent-package"]["agents"][0].get("mcp-servers"):
-        print("  note: inline MCP servers (and their injected secrets) are not yet carried by "
-              "import — they will not appear on the deployed agents.\n")
+        print("  note: MCP servers are matched to existing servers in each target workspace "
+              "(by name + URL); unmatched ones are reported as unresolved per target.\n")
 
     failures = 0
     for name, path, env in targets:
