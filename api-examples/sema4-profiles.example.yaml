@@ -1,0 +1,11 @@
+# Copy to sema4-profiles.yaml (or ~/.sema4/profiles.yaml, or point $SEMA4_PROFILES at it).
+# Defines the workspaces you operate. api_key uses ${ENV} refs so no literal secrets live here.
+profiles:
+  golden:
+    base_url: https://darkside.app.sema4.ai/api/v2
+    api_key: ${GOLDEN_API_KEY}
+
+  new-eu:
+    base_url: https://eu.app.sema4.ai/api/v2
+    api_key: ${EU_API_KEY}
+    secrets: new-eu.secrets.env      # optional: per-target secret values, auto-loaded on apply

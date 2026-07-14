@@ -1,0 +1,11 @@
+# A promotion target for distribution (see workflows/02-distribute-agent).
+profile: prod-eu                      # connection comes from the profiles registry
+agent_id:                              # filled in on first deploy (written back here)
+
+overrides:                            # deep-merged onto the base agent-spec.yaml
+  model:
+    name: gpt-5-3-codex-high
+
+secrets:                              # dotted path into the agent -> ${ENV_VAR}
+  mcp-servers.0.headers.X-SMTP-Password.value: ${EU_SMTP_PASSWORD}
+  mcp-servers.0.headers.X-SMTP-Username: ${EU_SMTP_USERNAME}

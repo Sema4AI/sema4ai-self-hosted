@@ -1,0 +1,43 @@
+# Composite action: publish a git-tracked agent to its workspace.
+# Reference it from an agent repo's workflow:
+#
+#   - uses: Sema4AI/sema4ai-self-hosted/api-examples/workflows/01-agent-gitops@v1
+#     with:
+#       base-url: ${{ vars.SEMA4_BASE_URL }}
+#       api-key:  ${{ secrets.SEMA4_API_KEY }}
+#       mode:     live   # or draft
+#
+name: Sema4.ai Agent GitOps
+description: Reconcile and publish a git-tracked agent to its Sema4.ai workspace.
+
+inputs:
+  base-url:
+    description: Deployment v2 API base URL (includes tenant path).
+    required: true
+  api-key:
+    description: Sema4.ai API key.
+    required: true
+  repo:
+    description: Path to the agent repo within the checkout.
+    required: false
+    default: "."
+  mode:
+    description: "draft (stage for review) or live (publish a new live version)."
+    required: false
+    default: draft
+
+runs:
+  using: composite
+  steps:
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Publish agent
+      shell: bash
+      env:
+        SEMA4_BASE_URL: ${{ inputs.base-url }}
+        SEMA4_API_KEY: ${{ inputs.api-key }}
+      run: |
+        uv run "${{ github.action_path }}/push.py" \
+          --repo "${{ inputs.repo }}" \
+          --mode "${{ inputs.mode }}"

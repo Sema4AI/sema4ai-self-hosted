@@ -1,0 +1,10 @@
+# A second promotion target, with different config + secrets.
+profile: prod-us                      # connection from the profiles registry
+agent_id:
+
+overrides:
+  welcome-message: "Welcome (US)"
+
+secrets:
+  mcp-servers.0.headers.X-SMTP-Password.value: ${US_SMTP_PASSWORD}
+  mcp-servers.0.headers.X-SMTP-Username: ${US_SMTP_USERNAME}

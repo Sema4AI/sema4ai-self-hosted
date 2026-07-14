@@ -1,0 +1,3 @@
+# Shared files land here with their human names (e.g. orders.xlsx), not the
+# opaque UUIDs used inside the export zip. pull.py renames on unpack; push.py
+# maps back on pack.
