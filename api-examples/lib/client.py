@@ -40,7 +40,7 @@ class SemaClient:
     def _open(self, req: urllib.request.Request) -> tuple[int, bytes, dict]:
         req.add_header("Authorization", f"Bearer {self._config.api_key}")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 return resp.status, resp.read(), dict(resp.headers)
         except urllib.error.HTTPError as err:
             raise ApiError(err.code, err.read().decode("utf-8", "replace")) from None
@@ -67,9 +67,9 @@ class SemaClient:
         _, body, _ = self._open(urllib.request.Request(self._url(path), method="GET"))
         return body
 
-    def post_multipart(self, path: str, *, field: str, filename: str,
+    def send_multipart(self, method: str, path: str, *, field: str, filename: str,
                        content: bytes) -> Any:
-        """POST a single-file multipart/form-data body and return decoded JSON."""
+        """Send a single-file multipart/form-data body (POST/PUT) and return decoded JSON."""
         boundary = uuid.uuid4().hex
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         body = b"".join([
@@ -79,7 +79,7 @@ class SemaClient:
             content,
             f"\r\n--{boundary}--\r\n".encode(),
         ])
-        req = urllib.request.Request(self._url(path), data=body, method="POST")
+        req = urllib.request.Request(self._url(path), data=body, method=method)
         req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
         _, resp, _ = self._open(req)
         return json.loads(resp) if resp else None
@@ -110,12 +110,31 @@ class SemaClient:
         return self.get_bytes(f"/agents/{agent_id}/export")
 
     def import_agent(self, zip_bytes: bytes, filename: str = "agent.zip") -> dict:
-        """POST /agents/import (multipart, field 'file') -> created agent.
+        """POST /agents/import (multipart, field 'file') -> PublicImportedAgent.
 
-        NOTE: today this always CREATES a new agent. Updating an existing
-        agent in place is not yet supported by the API.
+        CREATES a new agent. The response includes `unresolved_mcp_servers` for
+        package MCP servers with no matching workspace server.
         """
-        return self.post_multipart("/agents/import", field="file",
+        return self.send_multipart("POST", "/agents/import", field="file",
+                                   filename=filename, content=zip_bytes)
+
+    def update_import(self, agent_id: str, zip_bytes: bytes, filename: str = "agent.zip") -> dict:
+        """PUT /agents/{id}/import -> update the existing agent's draft from a zip.
+
+        Overwrites the agent in place (creates/updates its draft; the live version
+        stays until you publish). Idempotent; shared files are add-only. Returns a
+        PublicImportedAgent with `unresolved_mcp_servers`.
+        """
+        return self.send_multipart("PUT", f"/agents/{agent_id}/import", field="file",
+                                   filename=filename, content=zip_bytes)
+
+    def diff_agent(self, agent_id: str, zip_bytes: bytes, filename: str = "agent.zip") -> dict:
+        """POST /agents/{id}/diff -> PublicAgentDiff (dry-run of PUT import; no changes).
+
+        Fields: is_synced, changes[{change, field_path, deployed_value, package_value}],
+        mcp_servers_to_attach[{name,url}], unresolved_mcp_servers[{name,url}], files_to_add[str].
+        """
+        return self.send_multipart("POST", f"/agents/{agent_id}/diff", field="file",
                                    filename=filename, content=zip_bytes)
 
     def edit_agent(self, agent_id: str) -> dict:

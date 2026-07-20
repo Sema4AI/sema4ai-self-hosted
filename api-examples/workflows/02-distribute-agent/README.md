@@ -74,10 +74,11 @@ Use **overlays** (`.sema4/environments/*.yaml`) when targets need per-workspace 
 both live under the repo's `.sema4/` — `target.yaml` is the agent's **home** (01's dev loop) and
 `environments/` are its **promotion targets** (02).
 
-- **First deploy** (no `agent_id` in the overlay): creates the agent, writes its id back into the
-  overlay, and publishes if `--mode live`. (`--profiles` mode doesn't track ids — it's first-deploy only.)
-- **Already deployed** (`agent_id` present): skipped — updating an existing agent in place needs the
-  replace-import route (not available yet). Until then, re-distribution is first-deploy only.
+- **First deploy** (no `agent_id` in the overlay): creates the agent (`POST /agents/import`), writes its
+  id back into the overlay, and publishes if `--mode live`. (`--profiles` mode doesn't track ids — it's
+  create-only.)
+- **Already deployed** (`agent_id` present): converges it in place (`PUT /agents/{id}/import`), so
+  re-running distribution rolls the latest package to every target.
 
 Targets are independent: one workspace failing doesn't stop the others, and the run exits non-zero if
 any failed.
@@ -118,12 +119,14 @@ steps:
       EU_SMTP_PASSWORD: ${{ secrets.EU_SMTP_PASSWORD }}
 ```
 
-## Known limitation
+## MCP servers
 
-Inline **MCP servers are not yet carried by import** — the platform drops them on create (the deployed
-agent comes back with `mcp-servers: []`). The overlay `secrets:` mechanism is in place and ready, but
-MCP configuration won't land on the deployed agents until the import route materializes inline MCP
-servers. Everything else (model, settings, welcome message, document intelligence, SDMs, shared files)
-carries through. `distribute.py` prints a note when the project has inline MCP servers.
+On import, MCP servers referenced by the package are matched to servers that already exist in the
+**target** workspace (case-insensitive name + URL) and attached. Packages carry no secrets, so a server
+with no match can't be created — `distribute.py` reports it as **unresolved** for that target; create it
+in the workspace and re-run. In `--mode live`, a target with unresolved MCP servers is created/updated
+but **not published** (so a live version never ships missing its tools); override with
+`--allow-unresolved-mcp`. Everything else (model, settings, welcome message, document intelligence,
+SDMs, shared files) carries through the import.
 
-_Status: first-deploy works today; in-place updates land with the replace-import route._
+_Status: create + in-place update both work today._
