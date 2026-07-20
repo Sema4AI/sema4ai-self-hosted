@@ -40,7 +40,7 @@ class SemaClient:
     def _open(self, req: urllib.request.Request) -> tuple[int, bytes, dict]:
         req.add_header("Authorization", f"Bearer {self._config.api_key}")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 return resp.status, resp.read(), dict(resp.headers)
         except urllib.error.HTTPError as err:
             raise ApiError(err.code, err.read().decode("utf-8", "replace")) from None
@@ -126,6 +126,15 @@ class SemaClient:
         PublicImportedAgent with `unresolved_mcp_servers`.
         """
         return self.send_multipart("PUT", f"/agents/{agent_id}/import", field="file",
+                                   filename=filename, content=zip_bytes)
+
+    def diff_agent(self, agent_id: str, zip_bytes: bytes, filename: str = "agent.zip") -> dict:
+        """POST /agents/{id}/diff -> PublicAgentDiff (dry-run of PUT import; no changes).
+
+        Fields: is_synced, changes[{change, field_path, deployed_value, package_value}],
+        mcp_servers_to_attach[{name,url}], unresolved_mcp_servers[{name,url}], files_to_add[str].
+        """
+        return self.send_multipart("POST", f"/agents/{agent_id}/diff", field="file",
                                    filename=filename, content=zip_bytes)
 
     def edit_agent(self, agent_id: str) -> dict:

@@ -18,7 +18,7 @@ Version-control an agent in git and publish changes back to its workspace automa
                                                 ▼
                     push.py (GitHub Action, on push)
    ┌──────────────────────────────────────────────┐
-   │  git repo  ──reconcile──►  draft  ──publish──►  live │
+   │  git repo  ──PUT import──►  draft  ──publish──►  live │
    └──────────────────────────────────────────────┘
 ```
 
@@ -51,7 +51,12 @@ you publish (`--mode live`). Shared files are add-only (import never deletes).
 
 **MCP servers** are matched to servers that already exist in the target workspace by case-insensitive
 **name + URL** and attached; packages carry no secrets, so any server with no match is reported as
-*unresolved* — create it in the workspace and attach it, then re-run.
+*unresolved* — create it in the workspace and attach it, then re-run. To avoid shipping a live version
+missing its tools, `--mode live` **refuses to publish while any MCP server is unresolved** (override
+with `--allow-unresolved-mcp`).
+
+Because import is add-only, a shared file you delete from the repo is **not** removed from the agent —
+`push.py` reports it as *not removed* (delete it in the UI if you need it gone).
 
 ## Draft vs live
 
@@ -80,19 +85,17 @@ uv run push.py --repo ~/agents/my-agent
 > For a quick throwaway tryout you can use a temp dir like `/tmp/my-agent` instead — just note macOS
 > clears `/tmp`, so don't keep anything you care about there.
 
-`push.py` compares the repo against the agent's actual current state (it exports the live agent to
-diff), so any change is detected automatically — no flags required.
-
 It has three modes via `--mode`:
 
-- **`dryrun`** (default) — preview only; exports the live agent, compares it to the repo, and prints
-  every change that would apply (a unified diff for the runbook). No write endpoints are called.
+- **`dryrun`** (default) — preview only, no writes. Uses the server dry-run (`POST /agents/{id}/diff`)
+  to show field-level changes (a unified diff for the runbook), **files to add**, **MCP servers to
+  attach**, and **unresolved MCP servers** — plus any files that won't be removed.
 - **`draft`** — imports the package into the agent's draft (`PUT /import`); the live version is untouched.
-- **`live`** — imports into the draft and publishes a new live version.
+- **`live`** — imports into the draft and publishes a new live version (blocked while MCP servers are
+  unresolved; see above).
 
-Everything in the package is applied (see [What push.py applies](#what-pushpy-applies)); any unresolved
-MCP servers are reported so you can create + attach them. Discard a test draft with the agent's
-`discard-draft` to return it to pristine.
+Everything in the package is applied (see [What push.py applies](#what-pushpy-applies)). Discard a test
+draft with the agent's `discard-draft` to return it to pristine.
 
 Before doing anything, `push.py` runs a local pre-flight on the repo (valid `agent-spec.yaml` YAML,
 required fields, referenced runbook/SDM/shared files present) and exits with a clear `✗ INVALID` message

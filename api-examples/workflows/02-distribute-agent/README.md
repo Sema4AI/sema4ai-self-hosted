@@ -124,7 +124,9 @@ steps:
 On import, MCP servers referenced by the package are matched to servers that already exist in the
 **target** workspace (case-insensitive name + URL) and attached. Packages carry no secrets, so a server
 with no match can't be created — `distribute.py` reports it as **unresolved** for that target; create it
-in the workspace and re-run. Everything else (model, settings, welcome message, document intelligence,
+in the workspace and re-run. In `--mode live`, a target with unresolved MCP servers is created/updated
+but **not published** (so a live version never ships missing its tools); override with
+`--allow-unresolved-mcp`. Everything else (model, settings, welcome message, document intelligence,
 SDMs, shared files) carries through the import.
 
 _Status: create + in-place update both work today._

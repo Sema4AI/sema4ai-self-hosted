@@ -159,7 +159,8 @@ def _connect(name: str, env: dict) -> tuple[str, "callable"]:
     return base_url.rstrip("/"), make_client
 
 
-def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
+def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str,
+            allow_unresolved: bool) -> str:
     base_url, make_client = _connect(name, env)
     existing_id = env.get("agent_id")
 
@@ -186,10 +187,13 @@ def _deploy(repo: Path, name: str, path: Path, env: dict, mode: str) -> str:
         result += f" ({len(unresolved)} unresolved MCP)"
 
     if mode == "live":
-        state = client.get_agent_state(agent_id)
-        if state["state"] != "live" or state["has_draft"]:
-            client.publish_agent(agent_id)
-        result += " and published live"
+        if unresolved and not allow_unresolved:
+            result += " — NOT published (unresolved MCP; create+attach or --allow-unresolved-mcp)"
+        else:
+            state = client.get_agent_state(agent_id)
+            if state["state"] != "live" or state["has_draft"]:
+                client.publish_agent(agent_id)
+            result += " and published live"
 
     if path is not None and not existing_id:  # record the new id on first deploy
         _write_back_agent_id(path, agent_id)
@@ -205,6 +209,8 @@ def main() -> None:
                                            "(no overlays; same agent to each).")
     parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
                         help="dryrun: plan only (default). draft: create. live: create and publish.")
+    parser.add_argument("--allow-unresolved-mcp", action="store_true",
+                        help="Publish (--mode live) even if a target has unresolved MCP servers.")
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -223,7 +229,7 @@ def main() -> None:
     failures = 0
     for name, path, env in targets:
         try:
-            print(f"  • {name}: {_deploy(repo, name, path, env, args.mode)}")
+            print(f"  • {name}: {_deploy(repo, name, path, env, args.mode, args.allow_unresolved_mcp)}")
         except (ApiError, SystemExit) as exc:
             failures += 1
             print(f"  ✗ {name}: {exc}")

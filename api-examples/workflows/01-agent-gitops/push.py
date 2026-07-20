@@ -12,13 +12,14 @@
 Applies the whole package via `PUT /agents/{id}/import`, so any change is carried —
 runbook, name/description, model, settings, welcome message, SDMs, and shared files.
 The import creates/updates the agent's DRAFT; the live version stays until you publish.
-MCP servers are matched to existing workspace servers by name+URL and attached; any
-unresolved ones are reported so you can create + attach them.
 
-Steps:
-  1. Read .sema4/target.yaml -> agent_id (+ home profile).
-  2. dryrun: export the live agent, compare to the repo, and print what would change.
-  3. draft/live: pack the repo and PUT it into the agent's draft; live also publishes.
+  - dryrun uses the server dry-run (`POST /agents/{id}/diff`) to show field-level changes,
+    MCP servers to attach, unresolved MCP servers, and files to add.
+  - MCP servers are matched to existing workspace servers by name+URL and attached;
+    unresolved ones are reported. `--mode live` refuses to publish while any remain
+    (pass --allow-unresolved-mcp to override) so a live version never ships missing tools.
+  - Import is add-only for shared files; files removed from the repo are reported but
+    NOT deleted (remove them in the UI if needed).
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ import yaml  # noqa: E402
 from lib import agentpack  # noqa: E402
 from lib.client import ApiError, SemaClient  # noqa: E402
 from lib.config import load  # noqa: E402
+
+# Lifecycle artifacts the server diff always reports for a live agent (package is a draft);
+# not user edits, so hide them.
+NOISE_FIELDS = {"state", "live_version_id"}
 
 _COLOR = ((sys.stdout.isatty() or os.environ.get("FORCE_COLOR"))
           and os.environ.get("NO_COLOR") is None)
@@ -109,86 +114,96 @@ def _validate(repo: Path) -> list[str]:
     return errors
 
 
-def _read_tree(root: Path) -> tuple[dict, str, dict[str, bytes]]:
-    """Return (agent dict, runbook text, {relative path: bytes}) for an agent tree.
-
-    Fingerprints both agent-files and semantic-data-models so file-content edits are
-    detected even when the manifest entry (name) is unchanged.
-    """
-    spec = yaml.safe_load((root / "agent-spec.yaml").read_text())
-    agent = _agent(spec)
-    runbook = (root / agent.get("runbook", "runbook.md")).read_text()
-    files: dict[str, bytes] = {}
+def _tree_files(root: Path) -> set[str]:
+    names: set[str] = set()
     for sub in ("agent-files", "semantic-data-models"):
         directory = root / sub
         if directory.is_dir():
-            for path in directory.iterdir():
-                if path.is_file():
-                    files[f"{sub}/{path.name}"] = path.read_bytes()
-    return agent, runbook, files
+            names |= {f"{sub}/{p.name}" for p in directory.iterdir() if p.is_file()}
+    return names
 
 
-def _changes(repo: Path, client: SemaClient, agent_id: str) -> tuple[list, str]:
-    """Compare the repo to the live agent. Returns (changes, live_name).
-
-    Each change is (label, detail_lines). Everything is applicable via PUT import,
-    so there is no "blocked" category.
-    """
-    want_agent, want_runbook, want_files = _read_tree(repo)
+def _removed_files(repo: Path, client: SemaClient, agent_id: str) -> list[str]:
+    """Files present on the live agent but absent from the repo. Import never deletes these."""
     with tempfile.TemporaryDirectory() as tmp:
         agentpack.unpack(client.export_agent(agent_id), Path(tmp))
-        have_agent, have_runbook, have_files = _read_tree(Path(tmp))
-
-    changes: list = []
-    for key in sorted(set(want_agent) | set(have_agent)):
-        if key == "runbook":
-            continue  # compared as a file below
-        if want_agent.get(key) != have_agent.get(key):
-            changes.append((f"agent-spec: {key}", None))
-    if want_runbook != have_runbook:
-        diff = [ln for ln in difflib.unified_diff(
-            str(have_runbook).splitlines(), str(want_runbook).splitlines(),
-            lineterm="") if not ln.startswith(("---", "+++"))]
-        changes.append(("runbook.md", diff))
-    for rel in sorted(set(want_files) | set(have_files)):
-        if want_files.get(rel) != have_files.get(rel):
-            verb = "add" if rel not in have_files else "update"
-            changes.append((f"{rel} ({verb})", None))
-    return changes, have_agent.get("name", "")
+        live = _tree_files(Path(tmp))
+    return sorted(live - _tree_files(repo))
 
 
-def _report(name: str, changes: list) -> None:
+def _fmt(value) -> str:
+    text = "" if value is None else str(value)
+    text = text.replace("\n", "⏎")
+    return text if len(text) <= 60 else text[:59] + "…"
+
+
+def _report(name: str, diff: dict, removals: list[str]) -> None:
+    changes = [c for c in (diff.get("changes") or []) if c.get("field_path") not in NOISE_FIELDS]
+    files_to_add = diff.get("files_to_add") or []
+    to_attach = diff.get("mcp_servers_to_attach") or []
+    unresolved = diff.get("unresolved_mcp_servers") or []
+
     print()
     print(bold("  DRY RUN  ") + dim(f"agent '{name}' · no changes made"))
     print(RULE)
-    if not changes:
-        print(dim("  In sync — the agent already matches the repo."))
-    else:
-        print(green(bold(f"  ✓ WILL APPLY  ({len(changes)})")))
-        for label, detail in changes:
-            print(f"      • {label}")
-            for line in (detail or []):
-                print("          " + _diff_line(line))
-    print(RULE)
+    if not (changes or files_to_add or to_attach or unresolved or removals):
+        print(dim("  In sync — importing the repo would change nothing."))
     if changes:
-        print(dim("  Preview · ") + "re-run with " + bold("--mode draft") +
-              " to stage or " + bold("--mode live") + " to publish.")
-    else:
-        print(dim("  Preview · nothing to apply."))
-    print(dim("  MCP servers are matched to existing workspace servers on import; "
-              "unresolved ones are reported on apply."))
+        print(green(bold(f"  ✓ WILL APPLY  ({len(changes)})")))
+        for c in changes:
+            fp = c.get("field_path")
+            if fp in ("runbook", "runbook_text"):
+                print(f"      • {fp}")
+                for ln in difflib.unified_diff(
+                        str(c.get("deployed_value") or "").splitlines(),
+                        str(c.get("package_value") or "").splitlines(), lineterm=""):
+                    if not ln.startswith(("---", "+++")):
+                        print("          " + _diff_line(ln))
+            else:
+                print(f"      • {c.get('change')} {fp}: "
+                      f"{_fmt(c.get('deployed_value'))} → {_fmt(c.get('package_value'))}")
+    if files_to_add:
+        print(green(bold(f"  ✓ FILES TO ADD  ({len(files_to_add)})")))
+        for f in files_to_add:
+            print(f"      • {f}")
+    if to_attach:
+        print(green(bold(f"  ✓ MCP TO ATTACH  ({len(to_attach)})")))
+        for m in to_attach:
+            print(f"      • {m.get('name')} ({m.get('url') or 'no url'})")
+    if unresolved:
+        print(yellow(bold(f"  ⚠ UNRESOLVED MCP  ({len(unresolved)})")) +
+              dim("  create + attach these in the workspace"))
+        for m in unresolved:
+            print(yellow(f"      • {m.get('name')} ({m.get('url') or 'no url'})"))
+    if removals:
+        print(yellow(bold(f"  ⚠ NOT REMOVED  ({len(removals)})")) +
+              dim("  import is add-only; delete these in the UI if needed"))
+        for f in removals:
+            print(yellow(f"      • {f}"))
+
+    print(RULE)
+    print(dim("  Preview · ") + "re-run with " + bold("--mode draft") +
+          " to stage or " + bold("--mode live") + " to publish.")
     print()
 
 
-def _apply(client: SemaClient, agent_id: str, repo: Path, mode: str) -> None:
+def _apply(client: SemaClient, agent_id: str, repo: Path, mode: str, allow_unresolved: bool) -> None:
     result = client.update_import(agent_id, agentpack.pack(repo))
     print(green(bold("  ✓ IMPORTED  ")) + f"updated the draft of '{result.get('name', '')}'")
 
-    for mcp in result.get("unresolved_mcp_servers") or []:
+    unresolved = result.get("unresolved_mcp_servers") or []
+    for mcp in unresolved:
         print(yellow(f"      ⚠ unresolved MCP server: {mcp.get('name')} "
                      f"({mcp.get('url') or 'no url'}) — create + attach it in the workspace"))
+    for f in _removed_files(repo, client, agent_id):
+        print(yellow(f"      ⚠ not removed (import is add-only): {f}"))
 
     if mode == "live":
+        if unresolved and not allow_unresolved:
+            print(red(bold("  ✗ NOT PUBLISHED  ")) +
+                  f"{len(unresolved)} unresolved MCP server(s) — the draft is staged but not live. "
+                  "Create + attach them and re-run, or pass --allow-unresolved-mcp.")
+            sys.exit(1)
         client.publish_agent(agent_id)
         print(green(bold("  ✓ PUBLISHED  ")) + "a new live version.")
     else:
@@ -200,9 +215,11 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", required=True, help="Path to the git-tracked agent repo.")
     parser.add_argument("--mode", choices=["dryrun", "draft", "live"], default="dryrun",
-                        help="dryrun: preview only, no writes (default). "
-                             "draft: import into the draft. live: import + publish.")
+                        help="dryrun: preview only (default). draft: import into the draft. "
+                             "live: import + publish.")
     parser.add_argument("--profile", help="Workspace profile name (else target.yaml's, else env).")
+    parser.add_argument("--allow-unresolved-mcp", action="store_true",
+                        help="Publish (--mode live) even if some MCP servers are unresolved.")
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -218,11 +235,13 @@ def main() -> None:
     client = SemaClient(load(args.profile or target.get("profile")))
 
     if args.mode == "dryrun":
-        changes, name = _changes(repo, client, agent_id)
-        _report(name, changes)
+        diff = client.diff_agent(agent_id, agentpack.pack(repo))
+        removals = _removed_files(repo, client, agent_id)
+        name = client.get_agent(agent_id).get("name", "")
+        _report(name, diff, removals)
         return
 
-    _apply(client, agent_id, repo, args.mode)
+    _apply(client, agent_id, repo, args.mode, args.allow_unresolved_mcp)
 
 
 if __name__ == "__main__":
