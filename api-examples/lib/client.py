@@ -156,3 +156,23 @@ class SemaClient:
     def discard_draft(self, agent_id: str, **body: Any) -> dict:
         """POST /agents/{id}/discard-draft -> revert draft to the live version."""
         return self.request("POST", f"/agents/{agent_id}/discard-draft", json_body=dict(body))
+
+    # --- schedules (worker agents only) -----------------------------------
+    def list_schedules(self, agent_id: str) -> Iterator[dict]:
+        """GET /agents/{id}/schedules -> PublicSchedule items."""
+        return self.paginate(f"/agents/{agent_id}/schedules")
+
+    def get_schedule(self, agent_id: str, schedule_id: str) -> dict:
+        return self.request("GET", f"/agents/{agent_id}/schedules/{schedule_id}")
+
+    def create_schedule(self, agent_id: str, **body: Any) -> dict:
+        """POST /agents/{id}/schedules (requires cron_expression)."""
+        return self.request("POST", f"/agents/{agent_id}/schedules", json_body=body)
+
+    def update_schedule(self, agent_id: str, schedule_id: str, **body: Any) -> dict:
+        """PUT /agents/{id}/schedules/{sid} -> full replace (omitted fields reset to defaults)."""
+        return self.request("PUT", f"/agents/{agent_id}/schedules/{schedule_id}", json_body=body)
+
+    def delete_schedule(self, agent_id: str, schedule_id: str) -> None:
+        """DELETE /agents/{id}/schedules/{sid} -> 204."""
+        self.request("DELETE", f"/agents/{agent_id}/schedules/{schedule_id}")
