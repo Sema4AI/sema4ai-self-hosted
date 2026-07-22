@@ -66,17 +66,26 @@ These aren't two competing config systems — it's one resolver with the env var
 (unnamed) workspace and profiles as **named** ones. No `--profile` → env. CI uses the env path (GitHub
 Actions injects secrets as env vars); profiles are for operating several workspaces locally.
 
-To find an agent's id (e.g. to pass to a workflow's `pull.py`):
+## Helpers
+
+Small root-level agent-management utilities (each takes `--profile` too):
 
 ```sh
-uv run list-agents.py --name "All"     # filter by name prefix; also --state, --json
+# list agents — id, state, mode (conversational|worker), last update
+uv run list-agents.py --name "All"            # also --state, --mode, --json
+
+# CRUD a worker agent's schedules (cron -> work items); worker agents only
+uv run schedules.py list   --agent "<name|id>"
+uv run schedules.py create --agent "<name|id>" --cron "0 9 * * 1-5" --message "..."
+uv run schedules.py delete --agent "<name|id>" --schedule "<sid>"
 ```
 
 ## Layout
 
 ```
 api-examples/
-  list-agents.py               helper: list agents and their ids
+  list-agents.py               helper: list agents (id, state, mode)
+  schedules.py                 helper: CRUD a worker agent's schedules
   sema4-profiles.example.yaml  template for the workspace profiles registry
   lib/                         shared helpers (HTTP client, agent zip<->tree packing, config/profiles)
   workflows/                   one directory per use case (scripts, READMEs, GitHub Actions)

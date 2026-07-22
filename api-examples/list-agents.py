@@ -29,29 +29,32 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", help="Filter by name prefix (case-insensitive).")
     parser.add_argument("--state", choices=["draft", "live"], help="Filter by lifecycle state.")
+    parser.add_argument("--mode", choices=["conversational", "worker"], help="Filter by agent mode.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")
     parser.add_argument("--profile", help="Workspace profile name (else SEMA4_* env).")
     args = parser.parse_args()
 
     agents = [a for a in SemaClient(load(args.profile)).list_agents(name=args.name)
-              if not args.state or a.get("state") == args.state]
+              if (not args.state or a.get("state") == args.state)
+              and (not args.mode or a.get("mode") == args.mode)]
     agents.sort(key=lambda a: a.get("name", "").lower())
 
     if args.json:
         print(json.dumps([{"name": a["name"], "id": a["id"], "state": a.get("state"),
-                           "updated_at": a.get("updated_at")}
+                           "mode": a.get("mode"), "updated_at": a.get("updated_at")}
                           for a in agents], indent=2))
         return
 
     # NOTE: the live agent's version and a true publish timestamp are not exposed by the API
     # (see EPD-7096); `updated_at` shown here is last-modified, not publish time.
-    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  LAST UPDATE")
+    print(f"{'NAME':40}  {'ID':36}  {'STATE':5}  {'MODE':14}  LAST UPDATE")
     for a in agents:
         name = a.get("name", "")
         if len(name) > 40:
             name = name[:39] + "…"
         updated = (a.get("updated_at") or "")[:16].replace("T", " ")
-        print(f"{name:40}  {a['id']:36}  {a.get('state', ''):5}  {updated}")
+        print(f"{name:40}  {a['id']:36}  {a.get('state', ''):5}  "
+              f"{(a.get('mode') or '-'):14}  {updated}")
     print(f"\n{len(agents)} agent(s).")
 
 
