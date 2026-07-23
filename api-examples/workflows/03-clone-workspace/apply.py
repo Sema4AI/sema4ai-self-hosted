@@ -106,20 +106,33 @@ def main() -> None:
         if input("   Type 'yes, really' to proceed: ").strip().lower() != "yes, really":
             raise SystemExit("aborted.")
 
+    # Apply each resource independently — one failure (e.g. a data connection whose
+    # host can't be verified) is reported and skipped, never aborting the whole run.
+    failures: list[str] = []
+
+    def step(label: str, call) -> None:
+        try:
+            call()
+            print(f"  ✓ {label}")
+        except ApiError as exc:
+            failures.append(label)
+            print(f"  ✗ {label}: {exc}")
+
     # branding + settings (singletons, PATCH)
     if doc.get("branding"):
-        client.request("PATCH", "/branding", json_body=doc["branding"])
-        print("  ✓ branding")
+        step("branding", lambda: client.request("PATCH", "/branding", json_body=doc["branding"]))
     if doc.get("settings"):
-        client.request("PATCH", "/settings", json_body=doc["settings"])
-        print("  ✓ settings")
+        step("settings", lambda: client.request("PATCH", "/settings", json_body=doc["settings"]))
 
-    # LLMs, then defaults by name
-    name_to_id = {}
+    # LLMs, then defaults by name (defaults only reference LLMs that were created)
+    name_to_id: dict[str, str] = {}
     for llm in llms:
-        created = client.request("POST", "/llms", json_body=llm)
-        name_to_id[llm["name"]] = created["id"]
-        print(f"  ✓ llm: {llm['name']}")
+        try:
+            name_to_id[llm["name"]] = client.request("POST", "/llms", json_body=llm)["id"]
+            print(f"  ✓ llm: {llm['name']}")
+        except ApiError as exc:
+            failures.append(f"llm: {llm['name']}")
+            print(f"  ✗ llm: {llm['name']}: {exc}")
     defaults = doc.get("llm_defaults") or {}
     body = {}
     if defaults.get("default_llm") in name_to_id:
@@ -127,19 +140,23 @@ def main() -> None:
     if defaults.get("sqlgen_llm") in name_to_id:
         body["sqlgen_llm_id"] = name_to_id[defaults["sqlgen_llm"]]
     if body:
-        client.request("PUT", "/llms/defaults", json_body=body)
-        print("  ✓ llm defaults")
+        step("llm defaults", lambda: client.request("PUT", "/llms/defaults", json_body=body))
 
     for m in mcp:
-        client.request("POST", "/mcp-servers", json_body=m)
-        print(f"  ✓ mcp: {m['name']}")
+        step(f"mcp: {m['name']}", lambda m=m: client.request("POST", "/mcp-servers", json_body=m))
     for conn in conns:
-        client.request("POST", "/data-connections", json_body=conn)
-        print(f"  ✓ data connection: {conn['name']}")
+        step(f"data connection: {conn['name']}",
+             lambda c=conn: client.request("POST", "/data-connections", json_body=c))
     for o in obs:
-        client.request("POST", "/observability/integrations", json_body=o)
-        print(f"  ✓ observability: {(o.get('settings') or {}).get('provider', '?')}")
+        prov = (o.get("settings") or {}).get("provider", "?")
+        step(f"observability: {prov}",
+             lambda o=o: client.request("POST", "/observability/integrations", json_body=o))
 
+    if failures:
+        print(f"\nDone with {len(failures)} failure(s): {', '.join(failures)}")
+        print("Fix them in the source YAML (e.g. a data connection with an unreachable host) "
+              "and re-apply, or create them by hand.")
+        sys.exit(1)
     print("\nDone.")
 
 
