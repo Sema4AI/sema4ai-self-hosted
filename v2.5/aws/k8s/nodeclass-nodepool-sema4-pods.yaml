@@ -1,0 +1,81 @@
+# =============================================================================
+# EKS Auto Mode — custom NodeClass + NodePool for the wide pod subnets
+# -----------------------------------------------------------------------------
+# The mm-sema4-test cluster's built-in Auto Mode NodeClass `default` is
+# AWS-managed (label app.kubernetes.io/managed-by=eks) and reconciles any
+# subnetSelectorTerms edit back to the cluster's configured /24 subnets — which
+# exhausted their IPs (~251 each) and caused `failed to assign an IP address`
+# pod-sandbox failures.
+#
+# This custom NodeClass/NodePool are NOT AWS-managed, so their subnet selection
+# is durable. They target the three /18 pod subnets (~49k IPs) created in the
+# VPC config (tag sema4ai/pod-subnet=true, see mm-iac-mia.aws/infra/
+# eks_pod_subnets.tf). The NodePool has weight 100 (built-in pools are weight 0),
+# so Karpenter provisions ALL new nodes here; the built-in general-purpose pool
+# remains only as an inert fallback. Existing nodes migrate to the /18s as they
+# consolidate/expire.
+#
+# Apply:  kubectl apply -f k8s/nodeclass-nodepool-sema4-pods.yaml
+# The NodeClass spec mirrors the built-in `default` (role, security group,
+# ephemeral storage, SNAT); the NodePool mirrors built-in `general-purpose`
+# requirements/disruption, adding weight.
+# =============================================================================
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: sema4-pods
+spec:
+  role: mm-sema4-test-eks-node
+  subnetSelectorTerms:
+    - tags:
+        sema4ai/pod-subnet: "true"
+  securityGroupSelectorTerms:
+    - id: sg-0d05885453f1cc70d
+  ephemeralStorage:
+    size: 80Gi
+    iops: 3000
+    throughput: 125
+  snatPolicy: Random
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: sema4-pods
+spec:
+  weight: 100
+  disruption:
+    budgets:
+      - nodes: 10%
+    consolidateAfter: 30s
+    consolidationPolicy: WhenEmptyOrUnderutilized
+  template:
+    spec:
+      expireAfter: 336h
+      terminationGracePeriod: 24h0m0s
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: sema4-pods
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+            - on-demand
+        - key: eks.amazonaws.com/instance-category
+          operator: In
+          values:
+            - c
+            - m
+            - r
+        - key: eks.amazonaws.com/instance-generation
+          operator: Gt
+          values:
+            - "4"
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+            - amd64
+        - key: kubernetes.io/os
+          operator: In
+          values:
+            - linux
