@@ -1,0 +1,88 @@
+# =============================================================================
+# EKS Auto Mode — custom NodeClass + NodePool for the wide pod subnets (mm-sema4-prod)
+# -----------------------------------------------------------------------------
+# Prod counterpart of nodeclass-nodepool-sema4-pods.yaml (mm-sema4-test). The
+# mm-sema4-prod built-in Auto Mode NodeClass `default` is AWS-managed and pins
+# the cluster's three /24 private subnets (10.102.11/12/13, ~251 IPs each);
+# subnet edits to it are reverted. This custom NodeClass/NodePool are NOT
+# AWS-managed, so their subnet selection is durable. They target the three /18
+# pod subnets (~49k IPs) created in the prod VPC config (tag
+# sema4ai/pod-subnet=true, see mm-iac-mia.aws/infra/eks_pod_subnets.tf with
+# prod.tfvars). The NodePool has weight 100 (built-in pools are weight 0), so
+# Karpenter provisions new nodes here; the built-in general-purpose pool remains
+# an inert fallback. Existing nodes migrate to the /18s as they consolidate/expire.
+#
+# Disruption mirrors the gentled mm-sema4-test sema4-pods pool (WhenEmpty, 5m,
+# budget 1) rather than the built-in general-purpose pool's aggressive
+# WhenEmptyOrUnderutilized/30s/10% — with 2-replica spar workspaces + PDBs this
+# keeps consolidation from churning healthy nodes.
+#
+# Node role, security group, ephemeral storage and SNAT mirror the prod built-in
+# `default` NodeClass (role mm-sema4-prod-eks-node, sg-02c5f143b4bccadd3).
+#
+# Apply:  kubectl --context mm-sema4-prod apply -f k8s/nodeclass-nodepool-sema4-pods-prod.yaml
+# =============================================================================
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: sema4-pods
+spec:
+  role: mm-sema4-prod-eks-node
+  # AND both tags: sema4ai/pod-subnet=true is applied to the /18 pod subnets in
+  # BOTH the test and prod VPCs, so the Environment tag (from the provider's
+  # default_tags) scopes selection to THIS cluster's VPC only. Without it this
+  # NodeClass would also match mm-sema4-test's subnets in a different VPC.
+  subnetSelectorTerms:
+    - tags:
+        sema4ai/pod-subnet: "true"
+        Environment: "prod"
+  securityGroupSelectorTerms:
+    - id: sg-02c5f143b4bccadd3
+  ephemeralStorage:
+    size: 80Gi
+    iops: 3000
+    throughput: 125
+  snatPolicy: Random
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: sema4-pods
+spec:
+  weight: 100
+  disruption:
+    budgets:
+      - nodes: "1"
+    consolidateAfter: 5m
+    consolidationPolicy: WhenEmpty
+  template:
+    spec:
+      expireAfter: 336h
+      terminationGracePeriod: 24h0m0s
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: sema4-pods
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+            - on-demand
+        - key: eks.amazonaws.com/instance-category
+          operator: In
+          values:
+            - c
+            - m
+            - r
+        - key: eks.amazonaws.com/instance-generation
+          operator: Gt
+          values:
+            - "4"
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+            - amd64
+        - key: kubernetes.io/os
+          operator: In
+          values:
+            - linux

@@ -26,9 +26,14 @@ metadata:
   name: sema4-pods
 spec:
   role: mm-sema4-test-eks-node
+  # AND both tags: sema4ai/pod-subnet=true is applied to the /18 pod subnets in
+  # BOTH the test and prod VPCs, so the Environment tag (from the provider's
+  # default_tags) scopes selection to THIS cluster's VPC only. Without it this
+  # NodeClass would also match mm-sema4-prod's subnets in a different VPC.
   subnetSelectorTerms:
     - tags:
         sema4ai/pod-subnet: "true"
+        Environment: "testing"
   securityGroupSelectorTerms:
     - id: sg-0d05885453f1cc70d
   ephemeralStorage:
