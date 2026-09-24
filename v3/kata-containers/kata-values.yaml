@@ -1,0 +1,44 @@
+# Reference configuration of Kata Containers (https://katacontainers.io/)
+# for Sema4.ai Enterprise v3
+
+shims:
+  disableAll: true
+  clh:
+    enabled: true
+    supportedArches:
+      - amd64
+    allowedHypervisorAnnotations: []
+    containerd:
+      snapshotter: ""
+    dropIn: |
+      [hypervisor.clh]
+      virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts", "--xattr"]
+      kernel_params = "cgroup_no_v1=all systemd.unified_cgroup_hierarchy=1"
+      enable_annotations = []
+      [runtime]
+      disable_guest_empty_dir = true
+
+defaultShim:
+  amd64: clh
+ 
+# Images come from your cluster's ordinary snapshotter.
+snapshotter:
+  setup: []
+
+runtimeClasses:
+  enabled: true
+  createDefault: false
+  overheadEnabled: false
+
+monitor:
+  enabled: false
+
+node-feature-discovery:
+  enabled: false
+
+priorityClassName: system-node-critical
+
+# Pinned and pull-if-absent, so a mirrored or air-gapped registry works.
+imagePullPolicy: IfNotPresent
+kubectlImage:
+  tag: "v1.36.4"
