@@ -158,7 +158,9 @@ Door's origin is the Gateway's public IP, which AKS allocates a minute or so
 after the Gateway is created, so the last pass picks it up:
 `terraform output front_door_origin` is no longer `null`. If it still is, wait
 until `eval "$(terraform output -raw gateway_ip_command)"` prints an address,
-and apply again. Until the origin exists, every endpoint answers 404.
+and apply again. Until the origin exists, every endpoint answers 404. Once it
+does, Front Door takes 10–20 minutes to push it to every edge, and the
+endpoint answers 504 `OriginTimeout` until then: propagation, not a fault.
 
 If the apply fails creating the Key Vault keys with `403 Forbidden`, run it
 again: Terraform grants itself the key-management role on the vault it just
