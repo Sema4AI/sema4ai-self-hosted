@@ -68,7 +68,7 @@ resource "kubernetes_job_v1" "database_setup" {
 
         container {
           name    = "psql"
-          image   = "postgres:17-alpine"
+          image   = "postgres:18-alpine"
           command = ["psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--file=/setup/setup.sql"]
 
           env {

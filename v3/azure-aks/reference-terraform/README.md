@@ -58,7 +58,7 @@ and the install:
 | **Virtual network** | A node subnet (with the `Microsoft.Storage` and `Microsoft.KeyVault` service endpoints) and a subnet delegated to PostgreSQL. |
 | **AKS cluster** (Free tier) | Kubernetes 1.36+, OIDC issuer and workload identity enabled, Azure CNI Overlay, and ingress through the Kubernetes Gateway API: the managed Gateway API CRDs and the application routing add-on's Gateway API implementation (`approuting-istio`), with the add-on's retired NGINX off. |
 | **Node pool** (1 × `Standard_D32s_v5`, one zone) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
-| **PostgreSQL Flexible Server 17** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. |
+| **PostgreSQL Flexible Server 18** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. The application supports PostgreSQL 17 or 18. |
 | **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Firewalled to the node subnet. |
 | **Key Vault** | One RSA key per deployment: the chart's `infrastructure.azure.keyVaultKeyUrl`, reserved for envelope encryption of secrets at rest and for encrypting small values directly under it. It permits encrypt, decrypt, wrap key, and unwrap key. The chart requires it now, so the install contract is final before those features ship. |
 | **User-assigned managed identity** | Storage Blob Data Contributor on the container and Key Vault Crypto User on each deployment's key, and nothing else. Federated with each deployment's service account. |

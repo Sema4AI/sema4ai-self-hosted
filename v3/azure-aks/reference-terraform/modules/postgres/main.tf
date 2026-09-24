@@ -16,9 +16,11 @@ locals {
 #
 # TLS is required by the server (require_secure_transport defaults to on); the
 # application negotiates it by default.
+#
+# The application supports PostgreSQL 17 or 18.
 resource "azurerm_postgresql_flexible_server" "this" {
   name                = "psql-${var.infra_id}"
-  version             = "17"
+  version             = "18"
   resource_group_name = var.resource_group_name
   location            = var.resource_group_location
 

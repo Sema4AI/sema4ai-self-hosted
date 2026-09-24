@@ -2,9 +2,10 @@ terraform {
   required_version = ">= 1.13"
 
   required_providers {
+    # 4.55 is the first release that accepts PostgreSQL 18.
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.45"
+      version = "~> 4.55"
     }
     # Only for the cluster's Gateway API settings (modules/aks), which the
     # azurerm provider cannot yet express.
