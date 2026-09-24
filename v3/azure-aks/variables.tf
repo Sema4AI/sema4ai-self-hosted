@@ -90,7 +90,7 @@ variable "node_vm_size" {
 variable "node_os_disk_size_gb" {
   type        = number
   description = "OS disk of the node, in GiB. Holds the node image and every container image the cluster pulls; the application images and the sandbox runtime are large, so raise it if you run several deployments."
-  default     = 128
+  default     = 200
 }
 
 # The data root is a zonal disk created in the node's zone. A single zone is
