@@ -146,12 +146,12 @@ variable "postgres_max_connections" {
 
 variable "blob_replication_type" {
   type        = string
-  description = "Replication of the storage account holding the blob store, which is the system of record for workspace files. LRS keeps a trial cheap; use ZRS or GZRS for production."
-  default     = "LRS"
+  description = "Replication of the storage account holding the blob store, which is the system of record for workspace files. ZRS keeps three synchronous copies across the region's availability zones; GZRS adds an asynchronous copy in the paired region. Choose before the first apply: moving between locally redundant (LRS, GRS, RAGRS) and zone-redundant (ZRS, GZRS, RAGZRS) replication makes Terraform replace the account, and every blob in it."
+  default     = "ZRS"
 }
 
 variable "key_vault_purge_protection" {
   type        = bool
-  description = "Enable purge protection on the Key Vault holding each deployment's secrets key. Irreversible once on, and it keeps a destroyed vault reserved for the soft-delete window, so `terraform destroy` followed by a re-apply fails on the name. Off by default so a trial can be torn down; turn it on for production (see README.md)."
+  description = "Enable purge protection on the Key Vault holding each deployment's secrets key. Irreversible once on, and it keeps a destroyed vault reserved for the soft-delete window, so `terraform destroy` followed by a re-apply fails on the name. Off by default so a trial can be torn down; turn it on for production."
   default     = false
 }

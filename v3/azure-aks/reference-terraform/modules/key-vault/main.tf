@@ -40,7 +40,7 @@ resource "azurerm_key_vault" "this" {
 
   # No network_acls: creating a key is a data-plane call, so a firewall here
   # would have to allow whatever address `terraform apply` runs from, not just
-  # the cluster subnet. Azure RBAC is the gate; see README.md.
+  # the cluster subnet. Azure RBAC is the gate.
 }
 
 # Terraform creates the keys below through the data plane, which RBAC gates

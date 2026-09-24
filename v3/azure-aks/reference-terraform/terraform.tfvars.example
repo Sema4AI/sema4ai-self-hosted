@@ -25,7 +25,5 @@ deployment_ids = ["sema4ai"]
 # aks_subnet_prefix  = "10.0.32.0/24"
 # db_subnet_prefix   = "10.0.2.0/24"
 
-# Production: zone-redundant blob storage, and Key Vault keys that stay
-# recoverable after deletion.
-# blob_replication_type      = "ZRS"
+# Production: Key Vault keys that stay recoverable after deletion.
 # key_vault_purge_protection = true

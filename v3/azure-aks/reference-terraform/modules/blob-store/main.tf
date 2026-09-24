@@ -10,6 +10,10 @@
 #
 # This is the system of record for workspace files. The data root on the node
 # is a cache in front of it: a replaced node re-materializes from here.
+#
+# Moving between locally redundant (LRS, GRS, RAGRS) and zone-redundant (ZRS,
+# GZRS, RAGZRS) replication makes Terraform replace the account, and every
+# blob in it.
 
 resource "azurerm_storage_account" "this" {
   # 3-24 lowercase alphanumerics, globally unique.

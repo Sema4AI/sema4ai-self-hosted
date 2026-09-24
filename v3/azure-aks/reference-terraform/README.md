@@ -59,7 +59,7 @@ and the install:
 | **AKS cluster** (Free tier) | Kubernetes 1.36+, OIDC issuer and workload identity enabled, Azure CNI Overlay, and ingress through the Kubernetes Gateway API: the managed Gateway API CRDs and the application routing add-on's Gateway API implementation (`approuting-istio`), with the add-on's retired NGINX off. |
 | **Node pool** (1 × `Standard_D32s_v5`, one zone) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
 | **PostgreSQL Flexible Server 18** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. The application supports PostgreSQL 17 or 18. |
-| **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Firewalled to the node subnet. |
+| **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Zone-redundant (ZRS). Firewalled to the node subnet. |
 | **Key Vault** | One RSA key per deployment: the chart's `infrastructure.azure.keyVaultKeyUrl`, reserved for envelope encryption of secrets at rest and for encrypting small values directly under it. It permits encrypt, decrypt, wrap key, and unwrap key. The chart requires it now, so the install contract is final before those features ship. |
 | **User-assigned managed identity** | Storage Blob Data Contributor on the container and Key Vault Crypto User on each deployment's key, and nothing else. Federated with each deployment's service account. |
 | **Entra ID app registrations** (optional) | The OIDC client for sign-in, one per deployment. |
@@ -124,7 +124,7 @@ Isolation between deployments is at the database (its own database and
 roles), the node filesystem (its own data-root volume), the blob store (its
 own key prefix), the Key Vault (its own key), and the namespace. They share
 one managed identity, so the boundary in the blob container is the prefix, not
-a credential; see [Production hardening](#production-hardening).
+a credential.
 
 All deployments share the one node, so every deployment added divides the
 same sandbox capacity.
@@ -389,48 +389,6 @@ blob store.
   StorageClass of your own (on a disk encryption set, or on Premium SSD v2),
   named in `vfs.dataRoot.storageClassName`; see
   [Advanced configuration](https://sema4.ai/docs/v3/deploy/advanced-configuration#a-custom-storageclass-for-the-data-root).
-
-## Production hardening
-
-The defaults favor a quick, destroyable trial. Tighten them before production:
-
-- **Ingress.** Move to your own hostname and TLS at the Gateway, or restrict
-  the origin to this Front Door profile; see [Ingress](#ingress).
-- **Key Vault purge protection.** Set `key_vault_purge_protection = true`, so
-  a deleted key stays recoverable for the retention window. It is
-  irreversible, and it keeps a destroyed vault's name reserved for that window.
-  The vault has no network firewall (creating a key is a data-plane call from
-  wherever Terraform runs); Azure RBAC is its only gate.
-- **Blob storage redundancy.** The account is locally redundant (LRS). It is
-  the system of record for workspace files, so raise its replication
-  (`blob_replication_type = "ZRS"` or `"GZRS"`) and enable blob soft delete
-  and versioning to your recovery requirements.
-- **Shared-key access.** Nothing uses the storage account keys: the
-  application authenticates as the managed identity. Disabling shared-key
-  access on the account closes a credential path with no reader; confirm your
-  Terraform identity can still manage the account that way before you do.
-- **Isolation between deployments.** Deployments share one identity and one
-  container, so the boundary between them is the key prefix. To make it a
-  credential boundary, give each deployment its own identity, and scope its
-  role assignment to its prefix with an ABAC condition or to a container of
-  its own.
-- **Secrets on disk, in state, and in the cluster.** The rendered values
-  files (0600, gitignored) and the Terraform state hold the database
-  passwords, the OIDC client secrets, and the encryption keys. The Secrets in
-  the `sema4ai-database-setup` namespace hold the PostgreSQL administrator
-  password and each deployment's role passwords, for the Jobs that create the
-  databases. Restrict who can read state and that namespace, and keep the
-  values files off shared machines.
-- **Entra ID client secrets expire.** The provider defaults them to two
-  years, and nothing rotates them; see the comment in `modules/entra-app`.
-- **Cluster access.** The kubernetes and helm providers authenticate with the
-  cluster's local admin certificate, and the API server has a public endpoint.
-  Entra-only cluster access with local accounts disabled, and authorized IP
-  ranges or a private cluster, are the production posture; both require
-  reconfiguring those providers.
-- **Control plane tier.** The Free tier has no API server SLA; the Standard
-  tier does. The node itself remains a single point of failure: this release
-  runs on exactly one node.
 
 ## Cleanup
 
