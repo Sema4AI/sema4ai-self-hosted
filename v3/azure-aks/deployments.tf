@@ -228,6 +228,7 @@ resource "local_sensitive_file" "values" {
     host              = each.value.host
     gateway_name      = local.gateway_name
     gateway_namespace = local.gateway_namespace
+    gateway_listener  = local.gateway_listener
 
     oidc_server        = try(module.entra_app[each.key].issuer, "REPLACE_ME")
     oidc_client_id     = try(module.entra_app[each.key].client_id, "REPLACE_ME")

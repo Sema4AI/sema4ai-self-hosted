@@ -329,6 +329,20 @@ application's Ingress. All endpoints share a single Front Door origin that
 forwards the Host header unchanged, so the Gateway matches each request to the
 deployment whose HTTPRoute claims that hostname.
 
+This Gateway API implementation is the ingress Sema4.ai recommends on Azure,
+and the only one we test there: the upstream
+[ingress-nginx](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)
+project the add-on's NGINX is built on is end of life. The application itself
+works with any ingress. On Azure the chart renders no Ingress unless asked to,
+so to use an ingress controller of your own, replace the `httpRoute` block in
+`templates/values.yaml.tftpl` with an `ingress` block that sets
+`enabled: true`, the class, and the host, TLS and annotations the controller
+needs; to use another Gateway API implementation, point `httpRoute.parentRefs`
+at its Gateway. Either way, `front-door.tf` finds the origin by this Gateway's
+Service, so change that lookup to match. The guide's
+[Using your own ingress](https://sema4.ai/docs/v3/deploy/advanced-configuration#using-your-own-ingress)
+lists what any ingress must provide.
+
 What this shape trades away:
 
 - **The edge-to-cluster hop is plain HTTP.** Front Door only accepts an HTTPS
@@ -355,9 +369,14 @@ TLS options name the certificate
 (`kubernetes.azure.com/tls-cert-keyvault-uri`) and a service account bound to
 an identity with Key Vault Secrets User on the vault
 (`kubernetes.azure.com/tls-cert-service-account`), with the Key Vault
-secrets provider add-on enabled; see
-[Configure Azure DNS and TLS with the application routing Gateway API implementation](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls).
-That also lets you keep the Gateway private with an internal load balancer.
+secrets provider add-on enabled; step 3 of the
+[deployment guide](https://sema4.ai/docs/v3/deploy/azure-aks) has the
+commands and the Gateway, and Microsoft's
+[Configure Azure DNS and TLS with the application routing Gateway API implementation](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls)
+the details. Each HTTPRoute attaches to the listener named by
+`gateway_listener` in `gateway.tf`, so point that at the HTTPS listener and
+set the routes' hostnames to yours. That also lets you keep the Gateway
+private with an internal load balancer.
 Remove the Front Door resources in `front-door.tf` when you do, including the
 network security group: it admits only Front Door, on port 80, so it would
 block HTTPS clients reaching a public Gateway directly. To keep Front Door

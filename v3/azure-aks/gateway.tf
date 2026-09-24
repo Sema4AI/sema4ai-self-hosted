@@ -26,6 +26,9 @@
 locals {
   gateway_namespace = "sema4ai-gateway"
   gateway_name      = "front-door"
+  # The listener each deployment's HTTPRoute names as its sectionName, so a
+  # listener added later (HTTPS, for one) does not pick the routes up too.
+  gateway_listener = "http"
   # The namespace/name of the Service the add-on generates for the Gateway,
   # which is how AKS tags the Service's public IP (front-door.tf).
   gateway_service = "${local.gateway_namespace}/${local.gateway_name}-approuting-istio"
@@ -53,7 +56,7 @@ resource "kubernetes_manifest" "gateway" {
     spec = {
       gatewayClassName = "approuting-istio"
       listeners = [{
-        name     = "http"
+        name     = local.gateway_listener
         port     = 80
         protocol = "HTTP"
         allowedRoutes = {
