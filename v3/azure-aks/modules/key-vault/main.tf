@@ -4,11 +4,12 @@
 #
 # The chart requires the key identifier on infrastructure.platform=azure and
 # checks its shape when it renders. The key is reserved as the envelope key
-# for the application's secrets at rest: required now, so the install
-# contract is final before that feature ships. Treat each key as durable from
-# the start: once the application wraps secrets with it, destroying the key
-# makes them unreadable, exactly like the api.config.secretsKeys keyring in
-# the values file.
+# for the application's secrets at rest, and for encrypting small values
+# directly under it: required now, so the install contract is final before
+# those features ship. Treat each key as durable from the start: once the
+# application wraps secrets with it, destroying the key makes them
+# unreadable, exactly like the api.config.secretsKeys keyring in the values
+# file.
 #
 # Isolation is per deployment, matching the rest of the stack: one shared
 # vault with one key per deployment, as the blob store is one container with a
@@ -55,8 +56,13 @@ resource "azurerm_role_assignment" "terraform_crypto_officer" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-# RSA, because the application wraps a data key with it; 3072 bits is the
+# RSA, because the application wraps data keys with it; 3072 bits is the
 # smallest size still recommended for long-lived wrapping keys.
+#
+# key_opts are every operation the application may run with the key:
+# wrapKey and unwrapKey for envelope encryption, and encrypt and decrypt,
+# reserved for encrypting small values directly. Changing key_opts updates
+# the key in place; it does not replace the key.
 resource "azurerm_key_vault_key" "this" {
   for_each = var.deployment_ids
 
@@ -64,14 +70,14 @@ resource "azurerm_key_vault_key" "this" {
   key_vault_id = azurerm_key_vault.this.id
   key_type     = "RSA"
   key_size     = 3072
-  key_opts     = ["unwrapKey", "wrapKey"]
+  key_opts     = ["decrypt", "encrypt", "unwrapKey", "wrapKey"]
 
   depends_on = [azurerm_role_assignment.terraform_crypto_officer]
 }
 
-# get + wrapKey + unwrapKey for the deployment, scoped to its own key rather
-# than to the vault. The versionless resource ID keeps the assignment attached
-# across a key rotation.
+# get, encrypt, decrypt, wrapKey, and unwrapKey for the deployment, scoped to
+# its own key rather than to the vault. The versionless resource ID keeps the
+# assignment attached across a key rotation.
 resource "azurerm_role_assignment" "workload_crypto_user" {
   for_each = var.deployment_ids
 

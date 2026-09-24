@@ -60,7 +60,7 @@ and the install:
 | **Node pool** (1 × `Standard_D32s_v5`, one zone) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
 | **PostgreSQL Flexible Server 17** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. |
 | **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Firewalled to the node subnet. |
-| **Key Vault** | One RSA key per deployment: the chart's `infrastructure.azure.keyVaultKeyUrl`, reserved for envelope encryption of secrets at rest. The chart requires it now, so the install contract is final before that feature ships. |
+| **Key Vault** | One RSA key per deployment: the chart's `infrastructure.azure.keyVaultKeyUrl`, reserved for envelope encryption of secrets at rest and for encrypting small values directly under it. It permits encrypt, decrypt, wrap key, and unwrap key. The chart requires it now, so the install contract is final before those features ship. |
 | **User-assigned managed identity** | Storage Blob Data Contributor on the container and Key Vault Crypto User on each deployment's key, and nothing else. Federated with each deployment's service account. |
 | **Entra ID app registrations** (optional) | The OIDC client for sign-in, one per deployment. |
 | **Front Door** (Standard) | One endpoint per deployment: the public edge and the only place TLS is terminated. |

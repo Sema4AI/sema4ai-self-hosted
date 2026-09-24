@@ -98,9 +98,10 @@ infrastructure:
     # prefix.
     blobKeyPrefix: ${blob_key_prefix}
     # This deployment's own RSA key, reserved for envelope encryption of
-    # secrets at rest. The chart requires it now, so the install contract is
-    # final before that feature ships. Versionless, so the deployment follows
-    # the key's rotation.
+    # secrets at rest and for encrypting small values directly under it. The
+    # chart requires it now, so the install contract is final before those
+    # features ship. Versionless, so the deployment follows the key's
+    # rotation.
     keyVaultKeyUrl: ${key_vault_key_url}
 
 api:
