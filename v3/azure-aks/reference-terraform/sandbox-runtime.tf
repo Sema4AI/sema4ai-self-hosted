@@ -28,7 +28,7 @@ resource "helm_release" "kata_deploy" {
   namespace  = "kube-system"
 
   # The published reference configuration, shared with every other target.
-  values = [file("${path.module}/../kata-containers/kata-values.yaml")]
+  values = [file("${path.module}/../../kata-containers/kata-values.yaml")]
 
   # `--wait --timeout 25m`, as the guide installs it: the node unpacks Kata
   # and restarts containerd before the DaemonSet reports ready.

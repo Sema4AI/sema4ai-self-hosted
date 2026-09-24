@@ -15,7 +15,8 @@ v2.5/
   aws/              Reference materials for deploying on AWS
   azure/            Reference materials for deploying on Azure (coming soon)
 v3/
-  azure-aks/        Reference infrastructure for deploying on Azure AKS
+  azure-aks/
+    reference-terraform/  Reference infrastructure for deploying on Azure AKS
   kata-containers/  Reference configuration of the sandbox runtime (Kata Containers)
 ```
 

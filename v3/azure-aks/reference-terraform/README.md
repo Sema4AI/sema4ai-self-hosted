@@ -35,7 +35,7 @@ and the install:
 
 - The application, as a Helm chart.
 - This reference Terraform, and the
-  [sandbox runtime reference configuration](../kata-containers/kata-values.yaml).
+  [sandbox runtime reference configuration](../../kata-containers/kata-values.yaml).
 
 **You (the customer) are responsible for**
 
@@ -66,7 +66,7 @@ and the install:
 | **Front Door** (Standard) | One endpoint per deployment: the public edge and the only place TLS is terminated. |
 | **Network security group** | Admits only Front Door to the Gateway's load balancer. |
 | **Gateway** (in the cluster) | One for the cluster, shared by every deployment: a single HTTP listener, the Front Door origin. Each deployment's release attaches an HTTPRoute to it. |
-| **Sandbox runtime** (in the cluster) | Kata Containers from the Kata project's chart, with the [reference configuration](../kata-containers/kata-values.yaml), once for the cluster. |
+| **Sandbox runtime** (in the cluster) | Kata Containers from the Kata project's chart, with the [reference configuration](../../kata-containers/kata-values.yaml), once for the cluster. |
 | **Per deployment, in the cluster** | A namespace, a service account annotated with the managed identity's client ID, and a Job that creates the deployment's database and its three roles on the PostgreSQL server. |
 | **Per deployment, on disk** | `rendered/values-<deployment>.yaml`: every value filled in, and the install command in its header. |
 
@@ -162,7 +162,7 @@ The second pass does the rest of the cluster's setup, in order, and waits for
 each part:
 
 1. Kata Containers is installed from the Kata project's chart, with the
-   [reference configuration](../kata-containers/kata-values.yaml). This
+   [reference configuration](../../kata-containers/kata-values.yaml). This
    restarts containerd on the node, and can take up to 25 minutes.
 2. A Job per deployment creates its database and three roles on the
    PostgreSQL server, from inside the cluster, because the server has no
