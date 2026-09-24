@@ -59,9 +59,8 @@ provider "azuread" {
 # cluster's local admin certificate — no `az aks get-credentials` and no Entra
 # login during apply. With the helm provider below it owns every in-cluster
 # resource except the application releases, which the operator installs with
-# helm: the node check, the sandbox runtime, the cluster's Gateway, each
-# deployment's namespace and service account, and the Jobs that create the
-# databases.
+# helm: the sandbox runtime, the cluster's Gateway, each deployment's
+# namespace and service account, and the Jobs that create the databases.
 #
 # The Gateway is a kubernetes_manifest resource, which reads the cluster and
 # the Gateway API CRDs at plan time, so a new cluster is applied with

@@ -79,8 +79,8 @@ variable "kubernetes_version" {
 #
 # Standard_D32s_v5 (Intel) is exactly that shape and supports nested
 # virtualization. If you pick another size, confirm both in the Azure
-# documentation; the apply checks the node for /dev/kvm before it installs
-# the sandbox runtime (sandbox-runtime.tf).
+# documentation, and run k8s/kvm-check.yaml after the apply (README.md,
+# step 3).
 variable "node_vm_size" {
   type        = string
   description = "VM size of the node pool. Must be x86_64, support nested virtualization, and provide 32 vCPU / 128 GiB."

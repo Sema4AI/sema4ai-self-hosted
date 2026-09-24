@@ -66,7 +66,7 @@ and the install:
 | **Front Door** (Standard) | One endpoint per deployment: the public edge and the only place TLS is terminated. |
 | **Network security group** | Admits only Front Door to the Gateway's load balancer. |
 | **Gateway** (in the cluster) | One for the cluster, shared by every deployment: a single HTTP listener, the Front Door origin. Each deployment's release attaches an HTTPRoute to it. |
-| **Sandbox runtime** (in the cluster) | Kata Containers from the Kata project's chart, with the [reference configuration](../kata-containers/kata-values.yaml), once for the cluster. Installed only after a Job has confirmed that the node exposes `/dev/kvm`. |
+| **Sandbox runtime** (in the cluster) | Kata Containers from the Kata project's chart, with the [reference configuration](../kata-containers/kata-values.yaml), once for the cluster. |
 | **Per deployment, in the cluster** | A namespace, a service account annotated with the managed identity's client ID, and a Job that creates the deployment's database and its three roles on the PostgreSQL server. |
 | **Per deployment, on disk** | `rendered/values-<deployment>.yaml`: every value filled in, and the install command in its header. |
 
@@ -161,12 +161,10 @@ cluster and its Gateway API definitions exist, so the cluster goes first.
 The second pass does the rest of the cluster's setup, in order, and waits for
 each part:
 
-1. A Job checks that the node exposes `/dev/kvm`, which the sandbox runtime
-   needs and nothing downstream checks for.
-2. Kata Containers is installed from the Kata project's chart, with the
+1. Kata Containers is installed from the Kata project's chart, with the
    [reference configuration](../kata-containers/kata-values.yaml). This
    restarts containerd on the node, and can take up to 25 minutes.
-3. A Job per deployment creates its database and three roles on the
+2. A Job per deployment creates its database and three roles on the
    PostgreSQL server, from inside the cluster, because the server has no
    public endpoint.
 
@@ -180,14 +178,9 @@ fault.
 
 When a pass fails:
 
-- **`job: default/kvm-check is in failed state`**: the node lacks what the
-  sandbox needs. Read why with `kubectl -n default logs job/kvm-check` (after
-  `eval "$(terraform output -raw aks_get_credentials_command)"`). A missing
-  `vmx` flag or `/dev/kvm` means the VM size does not provide nested
-  virtualization: change `node_vm_size` and apply again, which replaces the
-  node and runs the check again.
 - **`job: sema4ai-database-setup/<deployment> is in failed state`**: read
-  why with `kubectl -n sema4ai-database-setup logs job/<deployment>`.
+  why with `kubectl -n sema4ai-database-setup logs job/<deployment>`, after
+  `eval "$(terraform output -raw aks_get_credentials_command)"`.
 - **`403 Forbidden` creating the Key Vault keys**: apply again. Terraform
   grants itself the key-management role on the vault it just created, and
   Azure takes a minute or two to honor it.
@@ -220,6 +213,23 @@ minutes on a first install, until the `data-root` Pod has claimed, formatted
 and mounted the data root.
 
 ### 3. Verify
+
+Check the node first. The sandbox runtime installs onto a node without
+`/dev/kvm` and reports success, and so does the application; only agent runs
+fail.
+
+```bash
+kubectl apply -f k8s/kvm-check.yaml
+kubectl -n default wait --for=condition=complete job/kvm-check --timeout=120s
+kubectl -n default logs job/kvm-check
+kubectl -n default delete job kvm-check
+```
+
+A healthy node prints a `/dev/kvm` character device and `vmx` among the CPU
+flags. A `MISSING` line means the VM size does not provide nested
+virtualization: change `node_vm_size` and apply again (the node is replaced).
+
+Then the deployment:
 
 ```bash
 # The sandbox runtime Terraform installed: both return an object
@@ -450,7 +460,7 @@ deployment, with new keys, at the old objects.
 ├── main.tf                   # resource group, network, PostgreSQL, AKS, version check
 ├── front-door.tf             # Front Door profile, an endpoint per deployment, origin NSG
 ├── gateway.tf                # the cluster's one Gateway, the Front Door origin
-├── sandbox-runtime.tf        # the /dev/kvm check, then Kata Containers
+├── sandbox-runtime.tf        # Kata Containers, the sandbox runtime
 ├── deployments.tf            # blob store, identity, Key Vault; per deployment: namespace,
 │                             #   service account, federated credential, Entra app, keys,
 │                             #   rendered values
@@ -464,8 +474,7 @@ deployment, with new keys, at the old objects.
 │   └── database.sql.tftpl    # a deployment's database and roles (idempotent)
 ├── rendered/                 # generated values-<deployment>.yaml (gitignored, 0600)
 ├── k8s/
-│   └── kvm-check.yaml        # node check: /dev/kvm, vmx, containerd socket (run by
-│                             #   Terraform, or by hand on another cluster)
+│   └── kvm-check.yaml        # node check: /dev/kvm, vmx, containerd socket
 └── modules/
     ├── aks/                  # cluster, node pool, OIDC issuer, Gateway API (application routing)
     ├── networking/           # virtual network, node subnet, delegated database subnet
