@@ -1,0 +1,43 @@
+-- The database and roles of deployment "${deployment_id}", run by Terraform as
+-- the server administrator (databases.tf). Every statement is safe to run
+-- again, and a rerun sets the two passwords back to the ones in the values
+-- file.
+--
+-- The migrator owns the database and applies the schema (owning it is what
+-- lets it enable the allow-listed pgcrypto and citext extensions), the
+-- definer owns the privileged functions and is the only role that bypasses
+-- row-level security, and the app role is what the application connects as
+-- at runtime. The administrator is not a superuser on Flexible Server, but
+-- on PostgreSQL 16 and newer it can create the definer with BYPASSRLS.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${migrator_role}') THEN
+    CREATE ROLE ${migrator_role} LOGIN
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${definer_role}') THEN
+    CREATE ROLE ${definer_role} NOLOGIN
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${app_role}') THEN
+    CREATE ROLE ${app_role} LOGIN
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+  END IF;
+END
+$$;
+
+ALTER ROLE ${migrator_role} PASSWORD '${migrator_password}';
+ALTER ROLE ${app_role} PASSWORD '${app_password}';
+GRANT ${definer_role} TO ${migrator_role};
+
+SELECT 'CREATE DATABASE ${database}'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${database}')
+\gexec
+
+-- Membership in the owner is what lets the administrator hand the database
+-- over and grant on it, so CONNECT is granted before the membership goes.
+GRANT ${migrator_role} TO CURRENT_USER;
+ALTER DATABASE ${database} OWNER TO ${migrator_role};
+GRANT CONNECT ON DATABASE ${database} TO ${app_role}, ${definer_role};
+REVOKE ${migrator_role} FROM CURRENT_USER;

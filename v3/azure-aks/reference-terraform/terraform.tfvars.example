@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+infra_id        = "s4aiprod"  # lowercase alphanumerics, max 15; several derived names are globally unique
+location        = "East US 2" # must offer Standard_D32s_v5, availability zones, and AKS 1.36+
+
+# One entry per deployment. Each name is the deployment's namespace and Helm
+# release name, and gets its own Front Door endpoint, database and roles, blob
+# key prefix, Key Vault key, Entra ID app registration, and rendered values
+# file.
+deployment_ids = ["sema4ai"]
+
+# Bring your own identity provider instead of an Entra ID app registration per
+# deployment (the rendered values then leave the OIDC fields as REPLACE_ME):
+# create_entra_apps = false
+
+# Cluster shape. The defaults are the supported one: a single
+# Standard_D32s_v5 (32 vCPU / 128 GiB, nested virtualization).
+# kubernetes_version = "1.36"
+# node_vm_size       = "Standard_D32s_v5"
+
+# Network, if the defaults would overlap a network you peer with.
+# vnet_address_space = "10.0.0.0/16"
+# aks_subnet_prefix  = "10.0.32.0/24"
+# db_subnet_prefix   = "10.0.2.0/24"

@@ -1,0 +1,87 @@
+# Helm values for the Sema4.ai self-hosted deployment "${deployment_id}" on
+# Azure AKS. Requires application version 3.1.4 or later.
+#
+# Rendered by Terraform and overwritten on every apply: edit
+# templates/values.yaml.tftpl, not this file. Everything not set here is a
+# chart default.
+#
+# Install with the deployment name as both the release name and the namespace
+# (`terraform output helm_install_commands` prints the command). Terraform
+# created that namespace with the service account named below, and the
+# federated credential that gives it Azure access names that exact namespace
+# and account, so do not use --create-namespace or install elsewhere.
+#
+# This file holds database passwords, encryption keys and the OIDC client
+# secret: it is written 0600 and must not be committed. Back up the two keys
+# in api.config outside the cluster (README.md, step 4).
+#
+# Deployment guide: https://sema4.ai/docs/v3/deploy/azure-aks
+
+# This deployment's Front Door endpoint. The chart derives every URL the
+# platform needs about itself from it, including the sign-in callback.
+applicationUrl: '${application_url}'
+
+# Created by Terraform and annotated with the client ID of the managed
+# identity that reaches the blob store and the Key Vault.
+serviceAccount:
+  create: false
+  name: ${service_account}
+
+# This deployment's database and roles on the shared, private Flexible Server,
+# created by Terraform.
+postgres:
+  host: '${postgres_host}'
+  database: '${postgres_database}'
+  appRole: '${postgres_app_role}'
+  appPassword: '${postgres_app_password}'
+  definerRole: '${postgres_definer_role}'
+  migratorRole: '${postgres_migrator_role}'
+  migratorPassword: '${postgres_migrator_password}'
+
+# The chart derives everything Azure-shaped from these: blob storage through
+# workload identity (no account keys), the data root's Premium SSD
+# StorageClass, and the sandbox wiring for the Kata runtime Terraform
+# installed.
+infrastructure:
+  platform: azure
+  azure:
+    storageAccountName: ${storage_account_name}
+    blobContainerName: ${blob_container_name}
+    # One container for every deployment on this infrastructure, separated by
+    # prefix.
+    blobKeyPrefix: ${blob_key_prefix}
+    # This deployment's own RSA key. Versionless, so the deployment follows
+    # the key's rotation.
+    keyVaultKeyUrl: ${key_vault_key_url}
+
+api:
+  config:
+    # Durable: anything encrypted with these cannot be read back without the
+    # exact values.
+    secretsKeys: '{"v1":"${secrets_key}"}'
+    projectPortabilityKeys: '{"active":"${portability_key}"}'
+
+    # Registered in Entra ID by Terraform. With create_entra_apps = false,
+    # fill these three in from your own identity provider, where you
+    # register:
+    #
+    #   Callback URL              ${application_url}/api/v1/auth/callback
+    #   Logout URL                ${application_url}
+    #   Application login URI     ${application_url}/login
+    #   Allowed web origin        ${application_url}
+    auth:
+      oidc:
+        server: '${oidc_server}'
+        clientId: '${oidc_client_id}'
+        clientSecret: '${oidc_client_secret}'
+
+# Attached to the cluster's shared Gateway and matched on this deployment's
+# Front Door hostname, which Front Door forwards as the Host header.
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: ${gateway_name}
+      namespace: ${gateway_namespace}
+      sectionName: ${gateway_listener}
+  hostnames:
+    - '${host}'

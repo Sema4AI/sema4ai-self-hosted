@@ -2,7 +2,7 @@
 
 Supplementary resources for deploying the Sema4.ai platform in a self-hosted environment. This repository accompanies the official deployment documentation:
 
-**📖 [Sema4.ai Deployment Documentation](https://sema4.ai/docs/v2/deploy)**
+**📖 Sema4.ai Deployment Documentation: [v3](https://sema4.ai/docs/v3/deploy) · [v2](https://sema4.ai/docs/v2/deploy)**
 
 The documentation is the authoritative guide for planning and executing a self-hosted deployment. The materials here — reference infrastructure code, configuration examples, and helper scripts — are intended to make following that guide easier, not to replace it.
 
@@ -12,8 +12,12 @@ Resources are organized by platform version, then by target environment:
 
 ```
 v2.5/
-  aws/      Reference materials for deploying on AWS
-  azure/    Reference materials for deploying on Azure (coming soon)
+  aws/              Reference materials for deploying on AWS
+  azure/            Reference materials for deploying on Azure (coming soon)
+v3/
+  azure-aks/
+    reference-terraform/  Reference infrastructure for deploying on Azure AKS
+  kata-containers/  Reference configuration of the sandbox runtime (Kata Containers)
 ```
 
 Use the directory that matches the platform version you are deploying. Contents within a version directory may include Terraform modules, example configuration, and other deployment aids for the given cloud or environment.
