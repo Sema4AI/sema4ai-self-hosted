@@ -29,13 +29,3 @@ variable "storage_mb" {
   type        = number
   description = "Storage size in MB. Can only ever grow."
 }
-
-variable "storage_tier" {
-  type        = string
-  description = "Storage performance tier (P4/P6/P10/...), constrained by storage_mb."
-}
-
-variable "max_connections" {
-  type        = number
-  description = "max_connections server parameter. Changing it restarts the server."
-}

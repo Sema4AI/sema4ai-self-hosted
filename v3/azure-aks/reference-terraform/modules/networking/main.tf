@@ -29,13 +29,11 @@ resource "azurerm_subnet" "db" {
 # cluster uses Azure CNI Overlay, so only node IPs come from this subnet, and
 # pod traffic leaving a node is SNAT'd to that node's address. That is why
 # this subnet is what the storage account firewall allows, and why the
-# in-network PostgreSQL server accepts connections from pods. The Key Vault
-# service endpoint is there for the day the application reads its key at
-# runtime.
+# in-network PostgreSQL server accepts connections from pods.
 resource "azurerm_subnet" "aks" {
   name                 = "snet-${var.infra_id}-aks"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [var.aks_subnet_prefix]
-  service_endpoints    = ["Microsoft.Storage", "Microsoft.KeyVault"]
+  service_endpoints    = ["Microsoft.Storage"]
 }

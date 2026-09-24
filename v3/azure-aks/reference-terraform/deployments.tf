@@ -9,21 +9,19 @@
 # `helm install <name> <chart> -n <name> -f rendered/values-<name>.yaml`.
 
 locals {
-  chart_name = "blockparty"
-
   # Deployment name => derived facts. The Helm release name is the deployment
-  # name, so every resource the chart derives is per deployment, including the
-  # data root, mounted under /var/lib/blockparty/<release>.
+  # name, so every resource the chart derives is per deployment.
   deployments = {
     for name in var.deployment_ids : name => {
       service_account = "${name}-app"
-      # The chart's fullname: <release>-blockparty, collapsed to the release
-      # name when that already contains "blockparty".
-      chart_fullname = strcontains(name, local.chart_name) ? name : "${name}-${local.chart_name}"
       # Prefixed, so no deployment name can collide with an existing database
-      # (postgres) or a reserved word (user, order) in the SQL.
-      database       = "s4_${replace(name, "-", "_")}"
-      data_root_path = "/var/lib/blockparty/${name}"
+      # (postgres) or a reserved word (user, order) in the SQL. PostgreSQL
+      # roles are server-wide on the shared server, so each deployment gets
+      # its own set, named after its database.
+      database      = "s4_${replace(name, "-", "_")}"
+      app_role      = "s4_${replace(name, "-", "_")}_app"
+      definer_role  = "s4_${replace(name, "-", "_")}_definer"
+      migrator_role = "s4_${replace(name, "-", "_")}_migrator"
       # The public hostname is the deployment's Front Door endpoint, generated
       # by Azure and only known after an apply. It is both the hostname of the
       # HTTPRoute the chart renders, which the Gateway matches on, and, as the
@@ -31,16 +29,6 @@ locals {
       # the application hands a browser from.
       host = azurerm_cdn_frontdoor_endpoint.deployment[name].host_name
       url  = "https://${azurerm_cdn_frontdoor_endpoint.deployment[name].host_name}"
-    }
-  }
-
-  # PostgreSQL roles are server-wide on the shared Flexible Server, so each
-  # deployment gets its own set, named after its database.
-  database_roles = {
-    for name, d in local.deployments : name => {
-      app      = "${d.database}_app"
-      definer  = "${d.database}_definer"
-      migrator = "${d.database}_migrator"
     }
   }
 }
@@ -51,8 +39,8 @@ locals {
 # One storage account and container for every deployment (separated by key
 # prefix, as the databases are by name), and one user-assigned managed
 # identity that holds Storage Blob Data Contributor on that container and Key
-# Vault Crypto User on each deployment's key. Those are the only Azure
-# permissions the application needs.
+# Vault Crypto User on the Key Vault. Those are the only Azure permissions the
+# application needs.
 #
 # The chart labels its VFS Pods `azure.workload.identity/use: "true"` on
 # infrastructure.platform=azure, so the AKS webhook projects a federated token
@@ -65,16 +53,15 @@ module "blob_store" {
   source = "./modules/blob-store"
 
   infra_id                = var.infra_id
-  resource_group_name     = local.resource_group_name
-  resource_group_location = local.resource_group_location
+  resource_group_name     = azurerm_resource_group.this.name
+  resource_group_location = azurerm_resource_group.this.location
   aks_subnet_id           = module.networking.aks_subnet_id
-  replication_type        = var.blob_replication_type
 }
 
 resource "azurerm_user_assigned_identity" "workload" {
   name                = "id-${var.infra_id}-sema4ai"
-  resource_group_name = local.resource_group_name
-  location            = local.resource_group_location
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
 }
 
 # Scoped to the container, not the account: an account-level grant would reach
@@ -89,13 +76,11 @@ module "key_vault" {
   source = "./modules/key-vault"
 
   infra_id                = var.infra_id
-  resource_group_name     = local.resource_group_name
-  resource_group_location = local.resource_group_location
+  resource_group_name     = azurerm_resource_group.this.name
+  resource_group_location = azurerm_resource_group.this.location
 
   deployment_ids        = var.deployment_ids
   workload_principal_id = azurerm_user_assigned_identity.workload.principal_id
-
-  purge_protection_enabled = var.key_vault_purge_protection
 }
 
 # One credential per deployment: federation is per service account subject,
@@ -206,21 +191,18 @@ resource "local_sensitive_file" "values" {
   content = templatefile("${path.module}/templates/values.yaml.tftpl", {
     deployment_id   = each.key
     service_account = each.value.service_account
-    chart_fullname  = each.value.chart_fullname
-    data_root_path  = each.value.data_root_path
 
     postgres_host              = module.postgres.host
     postgres_database          = each.value.database
-    postgres_app_role          = local.database_roles[each.key].app
+    postgres_app_role          = each.value.app_role
     postgres_app_password      = random_password.app_role[each.key].result
-    postgres_definer_role      = local.database_roles[each.key].definer
-    postgres_migrator_role     = local.database_roles[each.key].migrator
+    postgres_definer_role      = each.value.definer_role
+    postgres_migrator_role     = each.value.migrator_role
     postgres_migrator_password = random_password.migrator_role[each.key].result
 
     storage_account_name = module.blob_store.storage_account_name
     blob_container_name  = module.blob_store.container_name
     blob_key_prefix      = each.key
-    workload_client_id   = azurerm_user_assigned_identity.workload.client_id
     key_vault_key_url    = module.key_vault.key_urls[each.key]
 
     application_url   = each.value.url

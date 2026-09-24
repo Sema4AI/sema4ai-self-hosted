@@ -31,9 +31,8 @@ resource "azurerm_postgresql_flexible_server" "this" {
   administrator_login           = local.admin_username
   administrator_password        = random_password.admin.result
 
-  storage_mb   = var.storage_mb
-  storage_tier = var.storage_tier
-  sku_name     = var.sku_name
+  storage_mb = var.storage_mb
+  sku_name   = var.sku_name
 
   # Azure picks a zone when none is given; do not fight it on later applies.
   lifecycle {
@@ -52,20 +51,6 @@ resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
   name      = "azure.extensions"
   server_id = azurerm_postgresql_flexible_server.this.id
   value     = "PGCRYPTO,CITEXT"
-}
-
-# Every deployment holds several pools on this one server: the API, worker,
-# semantic query runner, VFS and sandbox pools come to well over a hundred
-# connections per deployment with the chart's defaults. Size this for the
-# number of deployments, not for traffic, and keep headroom for interactive
-# psql.
-#
-# NOTE: changing this restarts the server — expect a brief outage on apply.
-# The value must also fit the compute SKU.
-resource "azurerm_postgresql_flexible_server_configuration" "max_connections" {
-  name      = "max_connections"
-  server_id = azurerm_postgresql_flexible_server.this.id
-  value     = tostring(var.max_connections)
 }
 
 # Private DNS zone holding the server's A record, linked to the virtual

@@ -12,7 +12,6 @@ resource "azurerm_kubernetes_cluster" "this" {
   location            = var.resource_group_location
   dns_prefix          = "${var.infra_id}-aks"
   node_resource_group = var.node_resource_group
-  sku_tier            = "Free"
 
   kubernetes_version = var.kubernetes_version
 

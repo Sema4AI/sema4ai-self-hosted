@@ -23,6 +23,3 @@ deployment_ids = ["sema4ai"]
 # vnet_address_space = "10.0.0.0/16"
 # aks_subnet_prefix  = "10.0.32.0/24"
 # db_subnet_prefix   = "10.0.2.0/24"
-
-# Production: Key Vault keys that stay recoverable after deletion.
-# key_vault_purge_protection = true

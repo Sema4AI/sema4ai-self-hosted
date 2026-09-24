@@ -1,6 +1,6 @@
 # The Key Vault behind the chart's infrastructure.azure.keyVaultKeyUrl: one
 # vault for the infrastructure, one RSA key per deployment, and the workload
-# identity granted crypto rights on each key.
+# identity granted crypto rights on the vault.
 #
 # The chart requires the key identifier on infrastructure.platform=azure and
 # checks its shape when it renders. The key is reserved as the envelope key
@@ -27,16 +27,16 @@ resource "azurerm_key_vault" "this" {
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
 
-  # Azure RBAC rather than vault access policies, so a role assignment can be
-  # scoped to a single key.
+  # Azure RBAC rather than vault access policies, Microsoft's recommended
+  # model.
   rbac_authorization_enabled = true
 
-  # Soft delete is mandatory; the retention window is how long a deleted key
-  # can still be recovered. Purge protection makes that recovery the only
-  # option: it cannot be turned off once on, and it blocks `terraform
-  # destroy` from actually removing the vault for the whole window.
-  soft_delete_retention_days = var.soft_delete_retention_days
-  purge_protection_enabled   = var.purge_protection_enabled
+  # Soft delete is mandatory; 7 days is its shortest window. Purge protection
+  # stays off: it cannot be turned off once on, and it would keep a destroyed
+  # vault's name reserved for the whole window, so `terraform destroy`
+  # followed by a re-apply would fail.
+  soft_delete_retention_days = 7
+  purge_protection_enabled   = false
 
   # No network_acls: creating a key is a data-plane call, so a firewall here
   # would have to allow whatever address `terraform apply` runs from, not just
@@ -75,13 +75,11 @@ resource "azurerm_key_vault_key" "this" {
   depends_on = [azurerm_role_assignment.terraform_crypto_officer]
 }
 
-# get, encrypt, decrypt, wrapKey, and unwrapKey for the deployment, scoped to
-# its own key rather than to the vault. The versionless resource ID keeps the
-# assignment attached across a key rotation.
+# get, encrypt, decrypt, wrapKey, and unwrapKey on every key in the vault.
+# Scoped to the vault, not to each key: every deployment's key goes to the
+# same shared identity, so per-key assignments would grant nothing less.
 resource "azurerm_role_assignment" "workload_crypto_user" {
-  for_each = var.deployment_ids
-
-  scope                = azurerm_key_vault_key.this[each.key].resource_versionless_id
+  scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Crypto User"
   principal_id         = var.workload_principal_id
 }

@@ -4,7 +4,7 @@
 #
 # Agent code runs in a Kata microVM per run, which needs /dev/kvm on the node.
 # The Kata chart installs onto a node without it and reports success, so this
-# apply proves nothing about the node: k8s/kvm-check.yaml does (README.md,
+# apply proves nothing about the node: only an agent run does (README.md,
 # step 3).
 #
 # Installed exactly as the deployment guide installs it
@@ -15,16 +15,11 @@
 # created after it.
 # ---------------------------------------------------------------------------
 
-locals {
-  # The version the deployment guide installs; move it with the guide.
-  kata_deploy_chart_version = "4.1.0"
-}
-
 resource "helm_release" "kata_deploy" {
   name       = "kata-deploy"
   repository = "oci://ghcr.io/kata-containers/kata-deploy-charts"
   chart      = "kata-deploy"
-  version    = local.kata_deploy_chart_version
+  version    = "4.1.0" # the version the deployment guide installs; move it with the guide
   namespace  = "kube-system"
 
   # The published reference configuration, shared with every other target.

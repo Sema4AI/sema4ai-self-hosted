@@ -63,6 +63,10 @@ variable "kubernetes_version" {
   type        = string
   description = "AKS Kubernetes version, minor only (AKS picks the patch). The application requires 1.36 or newer. Confirm the version is offered in your region with `az aks get-versions --location <location> --output table`."
   default     = "1.36"
+  validation {
+    condition     = try(tonumber(split(".", var.kubernetes_version)[1]) >= 36, false)
+    error_message = "kubernetes_version must be 1.36 or newer: the application requires it. List the versions your region offers with `az aks get-versions --location <location> --output table`."
+  }
 }
 
 # The node is constrained in three ways, all of them properties of the VM
@@ -79,8 +83,7 @@ variable "kubernetes_version" {
 #
 # Standard_D32s_v5 (Intel) is exactly that shape and supports nested
 # virtualization. If you pick another size, confirm both in the Azure
-# documentation, and run k8s/kvm-check.yaml after the apply (README.md,
-# step 3).
+# documentation.
 variable "node_vm_size" {
   type        = string
   description = "VM size of the node pool. Must be x86_64, support nested virtualization, and provide 32 vCPU / 128 GiB."
@@ -99,8 +102,10 @@ variable "node_os_disk_size_gb" {
 # One Flexible Server is shared by every deployment on the cluster, each with
 # its own database and roles. A deployment opens several pools (the API, the
 # worker, the semantic query runner, the VFS and the sandbox each hold their
-# own), so both the SKU and max_connections scale with the number of
-# deployments rather than with traffic.
+# own), so the SKU scales with the number of deployments rather than with
+# traffic. max_connections is left at Azure's default, which is set from the
+# SKU the server is created with (1,718 on GP_Standard_D4s_v3) and does not
+# follow a later SKU change.
 # ---------------------------------------------------------------------------
 
 variable "postgres_sku_name" {
@@ -111,34 +116,6 @@ variable "postgres_sku_name" {
 
 variable "postgres_storage_mb" {
   type        = number
-  description = "Flexible Server storage in MB. Storage can only ever grow."
+  description = "Flexible Server storage in MB. Storage can only ever grow. Azure picks the performance tier that goes with the size (P10 for the default 128 GiB)."
   default     = 131072
-}
-
-variable "postgres_storage_tier" {
-  type        = string
-  description = "Flexible Server storage performance tier (P4/P6/P10/...). Must be one the chosen storage_mb allows."
-  default     = "P10"
-}
-
-variable "postgres_max_connections" {
-  type        = number
-  description = "max_connections server parameter. Must fit the chosen SKU. NOTE: changing it restarts the server."
-  default     = 500
-}
-
-# ---------------------------------------------------------------------------
-# Blob storage and Key Vault
-# ---------------------------------------------------------------------------
-
-variable "blob_replication_type" {
-  type        = string
-  description = "Replication of the storage account holding the blob store, which is the system of record for workspace files. ZRS keeps three synchronous copies across the region's availability zones; GZRS adds an asynchronous copy in the paired region. Choose before the first apply: moving between locally redundant (LRS, GRS, RAGRS) and zone-redundant (ZRS, GZRS, RAGZRS) replication makes Terraform replace the account, and every blob in it."
-  default     = "ZRS"
-}
-
-variable "key_vault_purge_protection" {
-  type        = bool
-  description = "Enable purge protection on the Key Vault holding each deployment's secrets key. Irreversible once on, and it keeps a destroyed vault reserved for the soft-delete window, so `terraform destroy` followed by a re-apply fails on the name. Off by default so a trial can be torn down; turn it on for production."
-  default     = false
 }

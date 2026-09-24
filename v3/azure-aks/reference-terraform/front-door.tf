@@ -20,7 +20,7 @@
 
 resource "azurerm_cdn_frontdoor_profile" "this" {
   name                = "afd-${var.infra_id}"
-  resource_group_name = local.resource_group_name
+  resource_group_name = azurerm_resource_group.this.name
   sku_name            = "Standard_AzureFrontDoor"
 
   # The ceiling on a single origin response; 240s is the maximum Front Door
@@ -93,8 +93,6 @@ resource "azurerm_cdn_frontdoor_origin" "ingress" {
   name                          = "ingress"
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.ingress.id
   host_name                     = local.ingress_public_ip
-  http_port                     = 80
-  https_port                    = 443
 
   # Explicit, despite the documented default of true: left unset, the origin
   # is created disabled, and every route into this group then fails to create
@@ -158,7 +156,7 @@ resource "azurerm_cdn_frontdoor_route" "deployment" {
 #
 # The tag covers every Front Door in Azure, not only this profile. Pinning it
 # to this profile means rejecting requests whose X-Azure-FDID header is not
-# this profile's ID (the front_door_id output) at the Gateway; see README.md.
+# this profile's ID (its resource_guid) at the Gateway; see README.md.
 #
 # The destination is the load balancer's public IP, not VirtualNetwork. AKS
 # gives a Service's load balancing rules floating IP (Direct Server Return)
@@ -174,8 +172,8 @@ resource "azurerm_network_security_group" "ingress" {
   count = local.ingress_public_ip == null ? 0 : 1
 
   name                = "nsg-${var.infra_id}-ingress"
-  location            = local.resource_group_location
-  resource_group_name = local.resource_group_name
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
 
   security_rule {
     name                       = "AllowFrontDoorInbound"

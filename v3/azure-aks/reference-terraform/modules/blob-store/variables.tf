@@ -15,8 +15,3 @@ variable "aks_subnet_id" {
   type        = string
   description = "Node subnet of the cluster. The storage account firewall denies everything else; pod traffic arrives SNAT'd to a node address in this subnet."
 }
-
-variable "replication_type" {
-  type        = string
-  description = "Storage account replication (LRS, ZRS, GRS, GZRS, ...)."
-}

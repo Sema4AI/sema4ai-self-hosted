@@ -39,10 +39,10 @@ resource "kubernetes_secret_v1" "database_setup" {
     "setup.sql" = templatefile("${path.module}/templates/database.sql.tftpl", {
       deployment_id     = each.key
       database          = each.value.database
-      app_role          = local.database_roles[each.key].app
+      app_role          = each.value.app_role
       app_password      = random_password.app_role[each.key].result
-      definer_role      = local.database_roles[each.key].definer
-      migrator_role     = local.database_roles[each.key].migrator
+      definer_role      = each.value.definer_role
+      migrator_role     = each.value.migrator_role
       migrator_password = random_password.migrator_role[each.key].result
     })
   }

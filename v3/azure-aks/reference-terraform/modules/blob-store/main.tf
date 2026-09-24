@@ -8,12 +8,10 @@
 # the container, and the chart labels its VFS Pods so the AKS webhook projects
 # the federated token the application exchanges for that identity.
 #
-# This is the system of record for workspace files. The data root on the node
-# is a cache in front of it: a replaced node re-materializes from here.
-#
-# Moving between locally redundant (LRS, GRS, RAGRS) and zone-redundant (ZRS,
-# GZRS, RAGZRS) replication makes Terraform replace the account, and every
-# blob in it.
+# This is the system of record for workspace files, so it is zone-redundant:
+# three synchronous copies across the region's availability zones. The data
+# root on the node is a cache in front of it: a replaced node re-materializes
+# from here.
 
 resource "azurerm_storage_account" "this" {
   # 3-24 lowercase alphanumerics, globally unique.
@@ -21,17 +19,15 @@ resource "azurerm_storage_account" "this" {
   resource_group_name      = var.resource_group_name
   location                 = var.resource_group_location
   account_tier             = "Standard"
-  account_replication_type = var.replication_type
+  account_replication_type = "ZRS"
 
   allow_nested_items_to_be_public   = false
   infrastructure_encryption_enabled = true
-  min_tls_version                   = "TLS1_2"
 }
 
 resource "azurerm_storage_container" "this" {
-  name                  = "sema4ai-blobs"
-  storage_account_id    = azurerm_storage_account.this.id
-  container_access_type = "private"
+  name               = "sema4ai-blobs"
+  storage_account_id = azurerm_storage_account.this.id
 }
 
 # Everything denied except the AKS node subnet, which the cluster reaches

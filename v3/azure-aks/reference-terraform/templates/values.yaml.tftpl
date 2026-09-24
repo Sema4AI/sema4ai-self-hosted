@@ -1,69 +1,34 @@
 # Helm values for the Sema4.ai self-hosted deployment "${deployment_id}" on
 # Azure AKS. Requires application version 3.1.4 or later.
 #
-# Rendered by Terraform from templates/values.yaml.tftpl, one file per
-# deployment, and overwritten on every apply: edit the template, not this
-# file. Every key below is a credential, a name-derived or shared
-# infrastructure fact, or one of the Azure resource identifiers the chart
-# derives its azure platform conventions from. Everything else is a chart
-# default, tuned for the 32 vCPU / 128 GiB node this cluster runs.
+# Rendered by Terraform and overwritten on every apply: edit
+# templates/values.yaml.tftpl, not this file. Everything not set here is a
+# chart default.
+#
+# Install with the deployment name as both the release name and the namespace
+# (`terraform output helm_install_commands` prints the command). Terraform
+# created that namespace with the service account named below, and the
+# federated credential that gives it Azure access names that exact namespace
+# and account, so do not use --create-namespace or install elsewhere.
+#
+# This file holds database passwords, encryption keys and the OIDC client
+# secret: it is written 0600 and must not be committed. Back up the two keys
+# in api.config outside the cluster (README.md, step 4).
 #
 # Deployment guide: https://sema4.ai/docs/v3/deploy/azure-aks
-#
-# ---------------------------------------------------------------------------
-# Terraform has already installed the sandbox runtime on the cluster and
-# created this deployment's database and its three roles. What is left is the
-# install, into the Terraform-created namespace:
-#
-#   helm install ${deployment_id} <chart> \
-#     --namespace ${deployment_id} \
-#     -f rendered/values-${deployment_id}.yaml
-#
-# --namespace MUST be "${deployment_id}": Terraform created that namespace with
-# the service account "${service_account}", and the federated credential that
-# gives it Azure access names that exact namespace and account. Do not use
-# --create-namespace. Use the same value as the release name: the chart
-# derives its resource names and the data root path from it.
-#
-# After install, `kubectl -n ${deployment_id} get pvc -l app.kubernetes.io/component=data-root`
-# shows one Bound claim, and
-# `kubectl -n ${deployment_id} logs daemonset/${chart_fullname}-data-root -c data-root-manager`
-# ends in "data root ready". The data root is mounted at ${data_root_path}. The
-# VFS and sandbox Pods sit in ContainerCreating until that mount lands, which
-# is expected on a first install.
-#
-# ---------------------------------------------------------------------------
-# This file holds database passwords, encryption keys and the OIDC client
-# secret: it is written 0600 and must not be committed. The keys also live in
-# Terraform state; regenerating them (destroying and recreating the
-# deployment's random_password resources) makes every secret and project
-# archive already encrypted with them unreadable. Back them up outside the
-# cluster.
-# ---------------------------------------------------------------------------
 
-# The address this deployment is reached at: its Front Door endpoint. From it
-# the chart derives every URL the platform needs about itself (the sign-in
-# callback, the allowed browser origin, and the webhook callback URLs), and
-# the Entra ID app registration holds the same callback. httpRoute.hostnames
-# below repeats the hostname: Front Door forwards it as the Host header, and
-# the Gateway matches the route on it.
+# This deployment's Front Door endpoint. The chart derives every URL the
+# platform needs about itself from it, including the sign-in callback.
 applicationUrl: '${application_url}'
 
-# Terraform-created service account, annotated with the client ID of the
-# user-assigned managed identity that holds Storage Blob Data Contributor on
-# the blob container and Key Vault Crypto User on this deployment's key:
-#
-#   azure.workload.identity/client-id: ${workload_client_id}
-#
-# If the annotation or the federated credential is missing, blob operations
-# fail with 403 on first use rather than at startup.
+# Created by Terraform and annotated with the client ID of the managed
+# identity that reaches the blob store and the Key Vault.
 serviceAccount:
   create: false
   name: ${service_account}
 
-# The shared Flexible Server, with this deployment's own database and roles,
-# which Terraform created. Private access only: pods reach it inside the virtual network and
-# resolve its FQDN through the linked private DNS zone.
+# This deployment's database and roles on the shared, private Flexible Server,
+# created by Terraform.
 postgres:
   host: '${postgres_host}'
   database: '${postgres_database}'
@@ -73,22 +38,10 @@ postgres:
   migratorRole: '${postgres_migrator_role}'
   migratorPassword: '${postgres_migrator_password}'
 
-# The Azure resources, in one block. From these the chart derives everything
-# Azure-shaped:
-#   - object storage at
-#     abfss://${blob_container_name}@${storage_account_name}.dfs.core.windows.net/${blob_key_prefix},
-#     reached as the managed identity federated with the service account
-#     above (no account keys);
-#   - a Premium SSD StorageClass on the Azure Disk CSI driver, encrypted at
-#     rest with platform-managed keys, and the data root claimed from it as a
-#     raw block volume on the node (100 GiB by default; raise
-#     vfs.dataRoot.size and upgrade, the filesystem grows without a restart,
-#     and on Premium SSD a larger disk is also a faster one);
-#   - the sandbox wiring for AKS: the Kata runtime Terraform installed on the
-#     cluster, reached through the node's containerd, with the release
-#     installing no Kata of its own;
-#   - no Ingress: the application routing add-on's NGINX is retired, and the
-#     release is served by the HTTPRoute below instead.
+# The chart derives everything Azure-shaped from these: blob storage through
+# workload identity (no account keys), the data root's Premium SSD
+# StorageClass, and the sandbox wiring for the Kata runtime Terraform
+# installed.
 infrastructure:
   platform: azure
   azure:
@@ -97,27 +50,20 @@ infrastructure:
     # One container for every deployment on this infrastructure, separated by
     # prefix.
     blobKeyPrefix: ${blob_key_prefix}
-    # This deployment's own RSA key, reserved for envelope encryption of
-    # secrets at rest and for encrypting small values directly under it. The
-    # chart requires it now, so the install contract is final before those
-    # features ship. Versionless, so the deployment follows the key's
-    # rotation.
+    # This deployment's own RSA key. Versionless, so the deployment follows
+    # the key's rotation.
     keyVaultKeyUrl: ${key_vault_key_url}
 
 api:
   config:
-    # The two durable keyrings. secretsKeys encrypts the credentials the
-    # platform stores in its database: model platform keys, integration and
-    # OAuth tokens. projectPortabilityKeys protects exported project archives.
-    # The database outlives the cluster, and what these encrypted cannot be
-    # read back without the exact values.
+    # Durable: anything encrypted with these cannot be read back without the
+    # exact values.
     secretsKeys: '{"v1":"${secrets_key}"}'
     projectPortabilityKeys: '{"active":"${portability_key}"}'
 
-    # The OIDC application. With create_entra_apps = true, Terraform
-    # registered it in Entra ID for this deployment. With
-    # create_entra_apps = false, fill these three from your own identity
-    # provider, where you register:
+    # Registered in Entra ID by Terraform. With create_entra_apps = false,
+    # fill these three in from your own identity provider, where you
+    # register:
     #
     #   Callback URL              ${application_url}/api/v1/auth/callback
     #   Logout URL                ${application_url}
@@ -129,17 +75,8 @@ api:
         clientId: '${oidc_client_id}'
         clientSecret: '${oidc_client_secret}'
 
-# Routing: an HTTPRoute the chart renders, with the same paths and Services as
-# its Ingress, attached to the cluster's one Gateway, which the application
-# routing add-on serves through its Gateway API implementation. The Gateway is
-# shared by every deployment and has no hostname of its own, so the route
-# claims this deployment's Front Door hostname, the Host header Front Door
-# forwards.
-#
-# Front Door terminates TLS at the edge with a certificate Microsoft issues
-# and rotates, and reaches the Gateway over plain HTTP. The Gateway sets no
-# request timeout, so Front Door's 240-second response ceiling and WebSocket
-# limits are the ones that apply, and no upload size limit (see README.md).
+# Attached to the cluster's shared Gateway and matched on this deployment's
+# Front Door hostname, which Front Door forwards as the Host header.
 httpRoute:
   enabled: true
   parentRefs:

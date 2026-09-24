@@ -2,11 +2,6 @@ output "cluster_name" {
   value = azurerm_kubernetes_cluster.this.name
 }
 
-output "kubernetes_version" {
-  value       = azurerm_kubernetes_cluster.this.kubernetes_version
-  description = "Kubernetes version the cluster is configured with (minor only when that is what was asked for). What the version check in main.tf reads."
-}
-
 output "oidc_issuer_url" {
   value       = azurerm_kubernetes_cluster.this.oidc_issuer_url
   description = "Issuer of the federated identity credentials that target this cluster."
