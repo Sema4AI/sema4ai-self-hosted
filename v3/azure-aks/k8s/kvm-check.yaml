@@ -1,0 +1,68 @@
+# Node prerequisite check for the Sema4.ai v3 sandbox.
+#
+# The sandbox starts a Kata Containers microVM per agent run, which needs
+# /dev/kvm on the node. On Azure that comes from the VM size supporting nested
+# virtualization, not from a cluster or node pool setting, and nothing
+# downstream checks for it: without /dev/kvm the Kata chart installs and
+# reports success, the application installs and comes up healthy, and only
+# agent runs fail.
+#
+# Run this BEFORE installing the sandbox runtime:
+#
+#   kubectl apply -f k8s/kvm-check.yaml
+#   kubectl -n default wait --for=condition=complete job/kvm-check --timeout=120s
+#   kubectl -n default logs job/kvm-check
+#   kubectl -n default delete job kvm-check
+#
+# A healthy node prints a /dev/kvm character device, "vmx" among the CPU
+# flags, and the containerd socket the application's sandbox attaches through.
+# A MISSING line for the flag means the VM size does not support nested
+# virtualization: change node_vm_size and re-apply (the node is replaced).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kvm-check
+  namespace: default
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: check
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              echo "node:      $NODE_NAME"
+              echo "--- /dev/kvm (required by the sandbox) ---"
+              ls -l /host-dev/kvm 2>&1 || echo "MISSING: the VM size does not expose nested virtualization, or the kvm module is not loaded"
+              echo "--- CPU virtualization flag ---"
+              grep -o -m1 -w vmx /proc/cpuinfo || echo "MISSING: no vmx flag, this VM size does not support nested virtualization"
+              echo "--- containerd socket ---"
+              ls -l /host-run/containerd/containerd.sock 2>&1 || echo "MISSING: unexpected containerd socket path"
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: host-dev
+              mountPath: /host-dev
+              readOnly: true
+            - name: host-run-containerd
+              mountPath: /host-run/containerd
+              readOnly: true
+      volumes:
+        - name: host-dev
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: host-run-containerd
+          hostPath:
+            path: /run/containerd
+            type: Directory

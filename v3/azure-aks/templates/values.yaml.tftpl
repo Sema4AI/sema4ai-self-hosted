@@ -1,0 +1,199 @@
+# Helm values for the Sema4.ai self-hosted deployment "${deployment_id}" on
+# Azure AKS. Requires application version 3.1.2 or later.
+#
+# Rendered by Terraform from templates/values.yaml.tftpl, one file per
+# deployment, and overwritten on every apply: edit the template, not this
+# file. Every key below is a credential, a name-derived or shared
+# infrastructure fact, or one of the Azure resource identifiers the chart
+# derives its azure platform conventions from. Everything else is a chart
+# default, tuned for the 32 vCPU / 128 GiB node this cluster runs.
+#
+# Deployment guide: https://sema4.ai/docs/v3/deploy/azure-aks
+#
+# ---------------------------------------------------------------------------
+# STEP 1 — the sandbox runtime, once per CLUSTER (not per deployment)
+#
+# Agent code runs in Kata Containers microVMs, and Kata is a cluster
+# prerequisite the release installs no part of. A microVM per run needs
+# /dev/kvm on the node, and nothing downstream checks for it, so confirm the
+# device first:
+#
+#   kubectl apply -f k8s/kvm-check.yaml
+#   kubectl -n default wait --for=condition=complete job/kvm-check --timeout=120s
+#   kubectl -n default logs job/kvm-check
+#
+# Then install Kata from the Kata project's chart with the reference
+# configuration in ../kata-containers/kata-values.yaml, following
+# https://sema4.ai/docs/v3/deploy/sandbox-runtime, and verify it; both must
+# return an object:
+#
+#   kubectl get runtimeclass kata-clh
+#   kubectl get nodes -l katacontainers.io/kata-runtime=true
+#
+# STEP 2 — this deployment's database and roles, once per deployment
+#
+# The application does NOT create its database, and it connects with three
+# least-privilege roles rather than the server admin. The server has no public
+# endpoint, so connect from inside the cluster (`eval "$(terraform output -raw
+# psql_command)"` runs an interactive psql as the admin in a throwaway Pod)
+# and paste:
+#
+#   CREATE ROLE ${postgres_migrator_role} LOGIN PASSWORD '${postgres_migrator_password}'
+#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+#   CREATE ROLE ${postgres_definer_role} NOLOGIN
+#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
+#   CREATE ROLE ${postgres_app_role} LOGIN PASSWORD '${postgres_app_password}'
+#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+#   GRANT ${postgres_definer_role} TO ${postgres_migrator_role};
+#   CREATE DATABASE ${postgres_database};
+#   GRANT ${postgres_migrator_role} TO CURRENT_USER;
+#   ALTER DATABASE ${postgres_database} OWNER TO ${postgres_migrator_role};
+#   REVOKE ${postgres_migrator_role} FROM CURRENT_USER;
+#   GRANT CONNECT ON DATABASE ${postgres_database} TO ${postgres_app_role}, ${postgres_definer_role};
+#
+# The migrator owns the database and applies the schema (owning it is what
+# lets it enable the pgcrypto and citext extensions, which Terraform
+# allow-listed on the server), the definer role owns the privileged functions
+# and is the only role that bypasses row-level security, and the app role is
+# what the application connects as at runtime.
+#
+# "${postgres_admin_user}" is not a PostgreSQL superuser on Flexible Server,
+# but on PostgreSQL 16 and newer it can create the definer role with
+# BYPASSRLS. Do not drop the attribute: row-level security depends on it.
+#
+# STEP 3 — install into the Terraform-created namespace
+#
+#   helm install ${deployment_id} <chart> \
+#     --namespace ${deployment_id} \
+#     -f rendered/values-${deployment_id}.yaml
+#
+# --namespace MUST be "${deployment_id}": Terraform created that namespace with
+# the service account "${service_account}", and the federated credential that
+# gives it Azure access names that exact namespace and account. Do not use
+# --create-namespace. Use the same value as the release name: the chart
+# derives its resource names and the data root path from it.
+#
+# On a new cluster, run `terraform apply` again once the install has created
+# its Ingress: that pass gives the Front Door endpoint its origin. Until then
+# the hostname below answers 404.
+#
+# After install, `kubectl -n ${deployment_id} get pvc -l app.kubernetes.io/component=data-root`
+# shows one Bound claim, and
+# `kubectl -n ${deployment_id} logs daemonset/${chart_fullname}-data-root -c data-root-manager`
+# ends in "data root ready". The data root is mounted at ${data_root_path}. The
+# VFS and sandbox Pods sit in ContainerCreating until that mount lands, which
+# is expected on a first install.
+#
+# ---------------------------------------------------------------------------
+# This file holds database passwords, encryption keys and the OIDC client
+# secret: it is written 0600 and must not be committed. The keys also live in
+# Terraform state; regenerating them (destroying and recreating the
+# deployment's random_password resources) makes every secret and project
+# archive already encrypted with them unreadable. Back them up outside the
+# cluster.
+# ---------------------------------------------------------------------------
+
+# The address this deployment is reached at: its Front Door endpoint. From it
+# the chart derives every URL the platform needs about itself (the sign-in
+# callback, the allowed browser origin, and the webhook callback URLs), and
+# the Entra ID app registration holds the same callback. ingress.host below
+# repeats the hostname: Front Door forwards it as the Host header, and NGINX
+# matches the Ingress rule on it.
+applicationUrl: '${application_url}'
+
+# Terraform-created service account, annotated with the client ID of the
+# user-assigned managed identity that holds Storage Blob Data Contributor on
+# the blob container and Key Vault Crypto User on this deployment's key:
+#
+#   azure.workload.identity/client-id: ${workload_client_id}
+#
+# If the annotation or the federated credential is missing, blob operations
+# fail with 403 on first use rather than at startup.
+serviceAccount:
+  create: false
+  name: ${service_account}
+
+# The shared Flexible Server, with this deployment's own database and roles
+# (STEP 2). Private access only: pods reach it inside the virtual network and
+# resolve its FQDN through the linked private DNS zone.
+postgres:
+  host: '${postgres_host}'
+  database: '${postgres_database}'
+  appRole: '${postgres_app_role}'
+  appPassword: '${postgres_app_password}'
+  definerRole: '${postgres_definer_role}'
+  migratorRole: '${postgres_migrator_role}'
+  migratorPassword: '${postgres_migrator_password}'
+
+# The Azure resources, in one block. From these the chart derives everything
+# Azure-shaped:
+#   - object storage at
+#     abfss://${blob_container_name}@${storage_account_name}.dfs.core.windows.net/${blob_key_prefix},
+#     reached as the managed identity federated with the service account
+#     above (no account keys);
+#   - a Premium SSD StorageClass on the Azure Disk CSI driver, encrypted at
+#     rest with platform-managed keys, and the data root claimed from it as a
+#     raw block volume on the node (100 GiB by default; raise
+#     vfs.dataRoot.size and upgrade, the filesystem grows without a restart,
+#     and on Premium SSD a larger disk is also a faster one);
+#   - the sandbox wiring for AKS: the Kata runtime from STEP 1, reached through
+#     the node's containerd, with the release installing no Kata of its own;
+#   - the ingress class of the AKS application routing add-on.
+infrastructure:
+  platform: azure
+  azure:
+    storageAccountName: ${storage_account_name}
+    blobContainerName: ${blob_container_name}
+    # One container for every deployment on this infrastructure, separated by
+    # prefix.
+    blobKeyPrefix: ${blob_key_prefix}
+    # This deployment's own RSA key, reserved for envelope encryption of
+    # secrets at rest. The chart requires it now, so the install contract is
+    # final before that feature ships. Versionless, so the deployment follows
+    # the key's rotation.
+    keyVaultKeyUrl: ${key_vault_key_url}
+
+api:
+  config:
+    # The two durable keyrings. secretsKeys encrypts the credentials the
+    # platform stores in its database: model platform keys, integration and
+    # OAuth tokens. projectPortabilityKeys protects exported project archives.
+    # The database outlives the cluster, and what these encrypted cannot be
+    # read back without the exact values.
+    secretsKeys: '{"v1":"${secrets_key}"}'
+    projectPortabilityKeys: '{"active":"${portability_key}"}'
+
+    # The OIDC application. With create_entra_apps = true, Terraform
+    # registered it in Entra ID for this deployment. With
+    # create_entra_apps = false, fill these three from your own identity
+    # provider, where you register:
+    #
+    #   Callback URL              ${application_url}/api/v1/auth/callback
+    #   Logout URL                ${application_url}
+    #   Application login URI     ${application_url}/login
+    #   Allowed web origin        ${application_url}
+    auth:
+      oidc:
+        server: '${oidc_server}'
+        clientId: '${oidc_client_id}'
+        clientSecret: '${oidc_client_secret}'
+
+# The class is the chart's to derive (webapprouting.kubernetes.azure.com, the
+# application routing add-on's managed NGINX), so only the host and the NGINX
+# tuning are set here. The add-on runs one load balancer for the cluster; this
+# deployment only adds a host rule to it.
+#
+# There is no tls block: Front Door terminates TLS at the edge with a
+# certificate Microsoft issues and rotates, and reaches this Ingress over
+# plain HTTP. ssl-redirect is off for the same reason: NGINX would otherwise
+# answer Front Door's HTTP request with a redirect back to the URL it just
+# came from. The body size admits file uploads up to the platform's 200 MiB
+# limit, and the timeouts keep websocket and streaming connections open for
+# the length of an agent run, within Front Door's own limits (see README.md).
+ingress:
+  host: '${ingress_host}'
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: 'false'
+    nginx.ingress.kubernetes.io/proxy-body-size: 200m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
