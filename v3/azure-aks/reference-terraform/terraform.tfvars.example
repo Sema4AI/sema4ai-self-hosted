@@ -2,7 +2,7 @@
 
 subscription_id = "00000000-0000-0000-0000-000000000000"
 infra_id        = "s4aiprod"  # lowercase alphanumerics, max 15; several derived names are globally unique
-location        = "East US 2" # must offer Standard_D32s_v5 in an availability zone, and AKS 1.36+
+location        = "East US 2" # must offer Standard_D32s_v5, availability zones, and AKS 1.36+
 
 # One entry per deployment. Each name is the deployment's namespace and Helm
 # release name, and gets its own Front Door endpoint, database and roles, blob
@@ -15,10 +15,9 @@ deployment_ids = ["sema4ai"]
 # create_entra_apps = false
 
 # Cluster shape. The defaults are the supported one: a single
-# Standard_D32s_v5 (32 vCPU / 128 GiB, nested virtualization) in one zone.
+# Standard_D32s_v5 (32 vCPU / 128 GiB, nested virtualization).
 # kubernetes_version = "1.36"
 # node_vm_size       = "Standard_D32s_v5"
-# node_zones         = ["1"]
 
 # Network, if the defaults would overlap a network you peer with.
 # vnet_address_space = "10.0.0.0/16"

@@ -35,7 +35,3 @@ variable "node_os_disk_size_gb" {
   description = "OS disk size of the node, in GiB."
 }
 
-variable "node_zones" {
-  type        = list(string)
-  description = "Availability zone the node pool runs in."
-}

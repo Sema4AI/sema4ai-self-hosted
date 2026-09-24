@@ -29,15 +29,11 @@ resource "azurerm_kubernetes_cluster" "this" {
   # does not raise it, and an autoscaler replacing the node takes the
   # deployments down and discards their data-root caches. AKS system pods
   # share the node.
-  #
-  # The pool is pinned to one availability zone, where the data-root disks
-  # are created.
   default_node_pool {
     name                 = "default"
     vm_size              = var.node_vm_size
     node_count           = 1
     os_disk_size_gb      = var.node_os_disk_size_gb
-    zones                = var.node_zones
     vnet_subnet_id       = var.aks_subnet_id
     auto_scaling_enabled = false
 

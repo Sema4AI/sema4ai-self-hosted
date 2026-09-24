@@ -57,7 +57,7 @@ and the install:
 | **Resource groups** `rg-<infra_id>` and `rg-<infra_id>-aks-nodes` | The first holds everything below; AKS creates the second for the node VM, its disks, and the Gateway's load balancer. |
 | **Virtual network** | A node subnet (with the `Microsoft.Storage` and `Microsoft.KeyVault` service endpoints) and a subnet delegated to PostgreSQL. |
 | **AKS cluster** (Free tier) | Kubernetes 1.36+, OIDC issuer and workload identity enabled, Azure CNI Overlay, and ingress through the Kubernetes Gateway API: the managed Gateway API CRDs and the application routing add-on's Gateway API implementation (`approuting-istio`), with the add-on's retired NGINX off. |
-| **Node pool** (1 × `Standard_D32s_v5`, one zone) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
+| **Node pool** (1 × `Standard_D32s_v5`) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
 | **PostgreSQL Flexible Server 18** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. The application supports PostgreSQL 17 or 18. |
 | **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Zone-redundant (ZRS). Firewalled to the node subnet. |
 | **Key Vault** | One RSA key per deployment: the chart's `infrastructure.azure.keyVaultKeyUrl`, reserved for envelope encryption of secrets at rest and for encrypting small values directly under it. It permits encrypt, decrypt, wrap key, and unwrap key. The chart requires it now, so the install contract is final before those features ship. |
@@ -92,7 +92,7 @@ it), and the application releases (step 2).
               └─────────────┬─────────────┘  the endpoint hostname
                             ▼
    ┌──────────────────────────────────────────────────────────────────┐
-   │ AKS: ONE node, one zone, no autoscaler                           │
+   │ AKS: ONE node, no autoscaler                                     │
    │                                                                  │
    │   namespace per deployment: api · web · worker · vfs · sandbox   │
    │                             + data-root Pod + sandbox runners    │

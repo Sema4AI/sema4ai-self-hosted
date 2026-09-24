@@ -14,7 +14,7 @@ variable "infra_id" {
 
 variable "location" {
   type        = string
-  description = "The Azure region to provision the infrastructure in (e.g. 'East US 2', 'West Europe'). It must offer the node VM size in an availability zone, and an AKS version of 1.36 or newer."
+  description = "The Azure region to provision the infrastructure in (e.g. 'East US 2', 'West Europe'). It must offer the node VM size, availability zones (the blob store is zone-redundant), and an AKS version of 1.36 or newer."
 }
 
 variable "deployment_ids" {
@@ -91,19 +91,6 @@ variable "node_os_disk_size_gb" {
   type        = number
   description = "OS disk of the node, in GiB. Holds the node image and every container image the cluster pulls; the application images and the sandbox runtime are large, so raise it if you run several deployments."
   default     = 200
-}
-
-# The data root is a zonal disk created in the node's zone. A single zone is
-# the supported shape (the node is a single point of failure either way).
-# Changing this replaces the node.
-variable "node_zones" {
-  type        = list(string)
-  description = "Availability zone of the node pool, as a one-element list."
-  default     = ["1"]
-  validation {
-    condition     = length(var.node_zones) == 1
-    error_message = "Pin the node pool to exactly one availability zone."
-  }
 }
 
 # ---------------------------------------------------------------------------

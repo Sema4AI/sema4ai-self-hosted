@@ -60,7 +60,6 @@ module "aks" {
   kubernetes_version   = var.kubernetes_version
   node_vm_size         = var.node_vm_size
   node_os_disk_size_gb = var.node_os_disk_size_gb
-  node_zones           = var.node_zones
 }
 
 # The application needs Kubernetes 1.36 or newer. The check reads the version
