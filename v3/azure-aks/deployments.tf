@@ -4,10 +4,9 @@
 # identity credential, an Entra ID app registration, generated credentials and
 # keys, and a fully rendered values file.
 #
-# Terraform renders the values and creates the namespace; installing is a
-# plain `helm install <name> <chart> -n <name> -f rendered/values-<name>.yaml`,
-# preceded by the one-time database SQL that the rendered file carries in its
-# header and, once per cluster, the sandbox runtime.
+# Terraform renders the values, creates the namespace, and creates the
+# database and roles (databases.tf); installing is a plain
+# `helm install <name> <chart> -n <name> -f rendered/values-<name>.yaml`.
 
 locals {
   chart_name = "blockparty"
@@ -152,12 +151,13 @@ module "entra_app" {
 # Per-deployment credentials and key material, generated once and kept in
 # state.
 #
-# The two role passwords are what the database SQL in the rendered values
-# file assigns. The two keys are durable: destroying and recreating them makes
-# data already encrypted with them unreadable, so treat removing a deployment
-# from var.deployment_ids as a data-destroying change. The application's
-# internal service tokens are deliberately absent: the chart generates them
-# and reuses them across upgrades.
+# The two role passwords are what the database setup (databases.tf) assigns
+# and the rendered values file connects with. The two keys are durable:
+# destroying and recreating them makes data already encrypted with them
+# unreadable, so treat removing a deployment from var.deployment_ids as a
+# data-destroying change. The application's internal service tokens are
+# deliberately absent: the chart generates them and reuses them across
+# upgrades.
 # ---------------------------------------------------------------------------
 
 resource "random_password" "app_role" {
@@ -210,7 +210,6 @@ resource "local_sensitive_file" "values" {
     data_root_path  = each.value.data_root_path
 
     postgres_host              = module.postgres.host
-    postgres_admin_user        = module.postgres.admin_username
     postgres_database          = each.value.database
     postgres_app_role          = local.database_roles[each.key].app
     postgres_app_password      = random_password.app_role[each.key].result

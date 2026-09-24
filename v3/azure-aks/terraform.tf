@@ -28,6 +28,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 3.1"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.0"
+    }
   }
 
   # State backend intentionally not configured — add your organization's
@@ -53,11 +57,11 @@ provider "azuread" {
 
 # Configured from the AKS cluster this same configuration creates, with the
 # cluster's local admin certificate — no `az aks get-credentials` and no Entra
-# login during apply. It owns the only in-cluster resources Terraform is
-# responsible for: the cluster's Gateway, and each deployment's namespace and
-# service account. Everything else in the cluster (the sandbox runtime, the
-# application releases and the HTTPRoutes they render) is installed by the
-# operator with helm.
+# login during apply. With the helm provider below it owns every in-cluster
+# resource except the application releases, which the operator installs with
+# helm: the node check, the sandbox runtime, the cluster's Gateway, each
+# deployment's namespace and service account, and the Jobs that create the
+# databases.
 #
 # The Gateway is a kubernetes_manifest resource, which reads the cluster and
 # the Gateway API CRDs at plan time, so a new cluster is applied with
@@ -70,4 +74,14 @@ provider "kubernetes" {
   client_certificate     = base64decode(module.aks.kube_config.client_certificate)
   client_key             = base64decode(module.aks.kube_config.client_key)
   cluster_ca_certificate = base64decode(module.aks.kube_config.cluster_ca_certificate)
+}
+
+# Same cluster and credentials, for the sandbox runtime (sandbox-runtime.tf).
+provider "helm" {
+  kubernetes = {
+    host                   = module.aks.kube_config.host
+    client_certificate     = base64decode(module.aks.kube_config.client_certificate)
+    client_key             = base64decode(module.aks.kube_config.client_key)
+    cluster_ca_certificate = base64decode(module.aks.kube_config.cluster_ca_certificate)
+  }
 }

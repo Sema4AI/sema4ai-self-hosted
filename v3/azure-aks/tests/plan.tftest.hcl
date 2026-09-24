@@ -21,6 +21,7 @@ mock_provider "azurerm" {
 mock_provider "azapi" {}
 mock_provider "azuread" {}
 mock_provider "kubernetes" {}
+mock_provider "helm" {}
 mock_provider "local" {}
 
 variables {
@@ -43,6 +44,10 @@ run "first_apply_no_gateway_ip" {
   assert {
     condition     = kubernetes_manifest.gateway.manifest.spec.gatewayClassName == "approuting-istio"
     error_message = "the Gateway must use the application routing add-on's GatewayClass"
+  }
+  assert {
+    condition     = helm_release.kata_deploy.version == "4.1.0" && length(kubernetes_job_v1.database_setup) == 2
+    error_message = "the sandbox runtime must be planned once, and a database setup Job per deployment"
   }
 }
 

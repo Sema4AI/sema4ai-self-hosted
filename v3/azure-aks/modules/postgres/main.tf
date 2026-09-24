@@ -11,8 +11,8 @@ locals {
 # mode, so no per-client rules are needed for the cluster.
 #
 # One server is shared by every deployment on the cluster; each gets its own
-# database and its own three least-privilege roles, created by the operator
-# with the SQL in the deployment's rendered values file.
+# database and its own three least-privilege roles, which a Job in the
+# cluster creates (databases.tf).
 #
 # TLS is required by the server (require_secure_transport defaults to on); the
 # application negotiates it by default.

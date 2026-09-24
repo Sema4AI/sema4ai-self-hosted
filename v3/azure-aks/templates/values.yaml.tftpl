@@ -11,57 +11,9 @@
 # Deployment guide: https://sema4.ai/docs/v3/deploy/azure-aks
 #
 # ---------------------------------------------------------------------------
-# STEP 1 — the sandbox runtime, once per CLUSTER (not per deployment)
-#
-# Agent code runs in Kata Containers microVMs, and Kata is a cluster
-# prerequisite the release installs no part of. A microVM per run needs
-# /dev/kvm on the node, and nothing downstream checks for it, so confirm the
-# device first:
-#
-#   kubectl apply -f k8s/kvm-check.yaml
-#   kubectl -n default wait --for=condition=complete job/kvm-check --timeout=120s
-#   kubectl -n default logs job/kvm-check
-#
-# Then install Kata from the Kata project's chart with the reference
-# configuration in ../kata-containers/kata-values.yaml, following
-# https://sema4.ai/docs/v3/deploy/sandbox-runtime, and verify it; both must
-# return an object:
-#
-#   kubectl get runtimeclass kata-clh
-#   kubectl get nodes -l katacontainers.io/kata-runtime=true
-#
-# STEP 2 — this deployment's database and roles, once per deployment
-#
-# The application does NOT create its database, and it connects with three
-# least-privilege roles rather than the server admin. The server has no public
-# endpoint, so connect from inside the cluster (`eval "$(terraform output -raw
-# psql_command)"` runs an interactive psql as the admin in a throwaway Pod)
-# and paste:
-#
-#   CREATE ROLE ${postgres_migrator_role} LOGIN PASSWORD '${postgres_migrator_password}'
-#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-#   CREATE ROLE ${postgres_definer_role} NOLOGIN
-#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
-#   CREATE ROLE ${postgres_app_role} LOGIN PASSWORD '${postgres_app_password}'
-#     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-#   GRANT ${postgres_definer_role} TO ${postgres_migrator_role};
-#   CREATE DATABASE ${postgres_database};
-#   GRANT ${postgres_migrator_role} TO CURRENT_USER;
-#   ALTER DATABASE ${postgres_database} OWNER TO ${postgres_migrator_role};
-#   REVOKE ${postgres_migrator_role} FROM CURRENT_USER;
-#   GRANT CONNECT ON DATABASE ${postgres_database} TO ${postgres_app_role}, ${postgres_definer_role};
-#
-# The migrator owns the database and applies the schema (owning it is what
-# lets it enable the pgcrypto and citext extensions, which Terraform
-# allow-listed on the server), the definer role owns the privileged functions
-# and is the only role that bypasses row-level security, and the app role is
-# what the application connects as at runtime.
-#
-# "${postgres_admin_user}" is not a PostgreSQL superuser on Flexible Server,
-# but on PostgreSQL 16 and newer it can create the definer role with
-# BYPASSRLS. Do not drop the attribute: row-level security depends on it.
-#
-# STEP 3 — install into the Terraform-created namespace
+# Terraform has already installed the sandbox runtime on the cluster and
+# created this deployment's database and its three roles. What is left is the
+# install, into the Terraform-created namespace:
 #
 #   helm install ${deployment_id} <chart> \
 #     --namespace ${deployment_id} \
@@ -109,8 +61,8 @@ serviceAccount:
   create: false
   name: ${service_account}
 
-# The shared Flexible Server, with this deployment's own database and roles
-# (STEP 2). Private access only: pods reach it inside the virtual network and
+# The shared Flexible Server, with this deployment's own database and roles,
+# which Terraform created. Private access only: pods reach it inside the virtual network and
 # resolve its FQDN through the linked private DNS zone.
 postgres:
   host: '${postgres_host}'
@@ -132,8 +84,9 @@ postgres:
 #     raw block volume on the node (100 GiB by default; raise
 #     vfs.dataRoot.size and upgrade, the filesystem grows without a restart,
 #     and on Premium SSD a larger disk is also a faster one);
-#   - the sandbox wiring for AKS: the Kata runtime from STEP 1, reached through
-#     the node's containerd, with the release installing no Kata of its own;
+#   - the sandbox wiring for AKS: the Kata runtime Terraform installed on the
+#     cluster, reached through the node's containerd, with the release
+#     installing no Kata of its own;
 #   - no Ingress: the application routing add-on's NGINX is retired, and the
 #     release is served by the HTTPRoute below instead.
 infrastructure:

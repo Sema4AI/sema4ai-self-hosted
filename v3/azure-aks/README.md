@@ -4,8 +4,10 @@ Terraform for running Sema4.ai v3 on **Azure Kubernetes Service**: the
 cluster with its sandbox-capable node, and every Azure resource the
 application depends on — PostgreSQL, blob storage, the Key Vault key, the
 workload identity, the Entra ID app registrations used for sign-in, and the
-Azure Front Door that fronts it all. It renders a completed Helm values file
-for each deployment.
+Azure Front Door that fronts it all. It installs the sandbox runtime, creates
+each deployment's database and roles, and renders a completed Helm values
+file for each deployment, so the one step left to you is installing the
+application chart.
 
 This is **reference infrastructure**: a working, minimal way to provision
 everything the application needs on Azure. Review it against your
@@ -39,12 +41,12 @@ and the install:
 
 - The Azure subscription and everything operational in it: state storage for
   this Terraform, backups, monitoring, cost, and security hardening.
-- **The sandbox runtime**: installing Kata Containers into the cluster, once,
-  from the Kata project's chart (step 3 below).
-- **The database and roles** for each deployment, created with the SQL in its
-  rendered values file (step 4 below), and operating the PostgreSQL server.
+- **Installing the application** into each deployment's namespace with the
+  rendered values file (step 2 below).
+- **Operating what Terraform installed**: upgrading the sandbox runtime with
+  the guide, and running the PostgreSQL server.
 - **The encryption keys** in each rendered values file: backing them up
-  outside the cluster (step 7 below).
+  outside the cluster (step 4 below).
 - An **identity provider**, unless you let this configuration create an Entra
   ID app registration per deployment.
 
@@ -64,11 +66,12 @@ and the install:
 | **Front Door** (Standard) | One endpoint per deployment: the public edge and the only place TLS is terminated. |
 | **Network security group** | Admits only Front Door to the Gateway's load balancer. |
 | **Gateway** (in the cluster) | One for the cluster, shared by every deployment: a single HTTP listener, the Front Door origin. Each deployment's release attaches an HTTPRoute to it. |
-| **Per deployment, in the cluster** | A namespace and a service account annotated with the managed identity's client ID. |
-| **Per deployment, on disk** | `rendered/values-<deployment>.yaml`: every value filled in, and the database SQL in its header. |
+| **Sandbox runtime** (in the cluster) | Kata Containers from the Kata project's chart, with the [reference configuration](../kata-containers/kata-values.yaml), once for the cluster. Installed only after a Job has confirmed that the node exposes `/dev/kvm`. |
+| **Per deployment, in the cluster** | A namespace, a service account annotated with the managed identity's client ID, and a Job that creates the deployment's database and its three roles on the PostgreSQL server. |
+| **Per deployment, on disk** | `rendered/values-<deployment>.yaml`: every value filled in, and the install command in its header. |
 
 Not created, by design: a StorageClass for the data root (the chart creates
-it), the sandbox runtime (step 3), and the databases (step 4).
+it), and the application releases (step 2).
 
 ## Architecture
 
@@ -93,7 +96,7 @@ it), the sandbox runtime (step 3), and the databases (step 4).
    │                                                                  │
    │   namespace per deployment: api · web · worker · vfs · sandbox   │
    │                             + data-root Pod + sandbox runners    │
-   │   Kata Containers (cluster-wide, installed by you)               │
+   │   Kata Containers (cluster-wide, installed by Terraform)         │
    └──────┬──────────────────────────┬─────────────────────────┬──────┘
           │                          │                         │
           ▼                          ▼                         ▼
@@ -148,94 +151,63 @@ A new cluster applies in three passes:
 cp terraform.tfvars.example terraform.tfvars   # then edit it
 terraform init
 terraform apply -target=module.aks   # the cluster, with the Gateway API turned on
-terraform apply                      # everything else, including the Gateway
+terraform apply                      # everything else: see below
 terraform apply                      # a minute later: Front Door's origin
 ```
 
 The Gateway is a Kubernetes object that Terraform can plan only once the
-cluster and its Gateway API definitions exist, so the cluster goes first. Front
-Door's origin is the Gateway's public IP, which AKS allocates a minute or so
-after the Gateway is created, so the last pass picks it up:
-`terraform output front_door_origin` is no longer `null`. If it still is, wait
-until `eval "$(terraform output -raw gateway_ip_command)"` prints an address,
-and apply again. Until the origin exists, every endpoint answers 404. Once it
-does, Front Door takes 10–20 minutes to push it to every edge, and the
-endpoint answers 504 `OriginTimeout` until then: propagation, not a fault.
+cluster and its Gateway API definitions exist, so the cluster goes first.
 
-If the apply fails creating the Key Vault keys with `403 Forbidden`, run it
-again: Terraform grants itself the key-management role on the vault it just
-created, and Azure takes a minute or two to honor it.
+The second pass does the rest of the cluster's setup, in order, and waits for
+each part:
 
-If it warns that the cluster runs a Kubernetes version older than 1.36, the
-application is not supported on it: check what the region offers with
-`az aks get-versions --location <location> --output table`, set
-`kubernetes_version`, and apply again.
+1. A Job checks that the node exposes `/dev/kvm`, which the sandbox runtime
+   needs and nothing downstream checks for.
+2. Kata Containers is installed from the Kata project's chart, with the
+   [reference configuration](../kata-containers/kata-values.yaml). This
+   restarts containerd on the node, and can take up to 25 minutes.
+3. A Job per deployment creates its database and three roles on the
+   PostgreSQL server, from inside the cluster, because the server has no
+   public endpoint.
 
-### 2. Check the cluster and the node
+Front Door's origin is the Gateway's public IP, which AKS allocates a minute
+or so after the Gateway is created, so the last pass picks it up:
+`terraform output front_door_origin` is no longer `null`. If it still is,
+wait a minute and apply again. Until the origin exists, every endpoint answers
+404. Once it does, Front Door takes 10–20 minutes to push it to every edge,
+and the endpoint answers 504 `OriginTimeout` until then: propagation, not a
+fault.
 
-```bash
-eval "$(terraform output -raw aks_get_credentials_command)"
-kubectl get nodes -L topology.kubernetes.io/zone    # one Ready node, in a zone
+When a pass fails:
 
-# Pods can reach PostgreSQL (the server is private to the virtual network)
-eval "$(terraform output -raw postgres_check_command)"
+- **`job: default/kvm-check is in failed state`**: the node lacks what the
+  sandbox needs. Read why with `kubectl -n default logs job/kvm-check` (after
+  `eval "$(terraform output -raw aks_get_credentials_command)"`). A missing
+  `vmx` flag or `/dev/kvm` means the VM size does not provide nested
+  virtualization: change `node_vm_size` and apply again, which replaces the
+  node and runs the check again.
+- **`job: sema4ai-database-setup/<deployment> is in failed state`**: read
+  why with `kubectl -n sema4ai-database-setup logs job/<deployment>`.
+- **`403 Forbidden` creating the Key Vault keys**: apply again. Terraform
+  grants itself the key-management role on the vault it just created, and
+  Azure takes a minute or two to honor it.
+- **A warning that the cluster runs a Kubernetes version older than 1.36**:
+  the application is not supported on it. Check what the region offers with
+  `az aks get-versions --location <location> --output table`, set
+  `kubernetes_version`, and apply again.
 
-# The node exposes /dev/kvm. Do this BEFORE installing the sandbox runtime:
-# nothing downstream notices a missing device.
-kubectl apply -f k8s/kvm-check.yaml
-kubectl -n default wait --for=condition=complete job/kvm-check --timeout=120s
-kubectl -n default logs job/kvm-check
-kubectl -n default delete job kvm-check
-```
-
-A healthy node prints a `/dev/kvm` character device and `vmx` among the CPU
-flags. A `MISSING` line means the VM size does not provide nested
-virtualization: change `node_vm_size` and apply again (the node is replaced).
-
-### 3. Install the sandbox runtime (once per cluster)
-
-Install Kata Containers with the reference configuration in
-[`../kata-containers/kata-values.yaml`](../kata-containers/kata-values.yaml),
-following [Install the sandbox runtime](https://sema4.ai/docs/v3/deploy/sandbox-runtime),
-and verify it:
-
-```bash
-kubectl get runtimeclass kata-clh
-kubectl get nodes -l katacontainers.io/kata-runtime=true
-```
-
-Both must return an object before you install any deployment.
-
-### 4. Create the database and roles (per deployment)
-
-The exact SQL, with the deployment's role names and generated passwords
-already filled in, is in the header of its rendered values file:
-
-```bash
-DEPLOYMENT=sema4ai
-sed -n '/^# STEP 2/,/^# STEP 3/p' rendered/values-$DEPLOYMENT.yaml
-```
-
-The server has no public endpoint, so run it from inside the cluster and paste
-the statements at the prompt:
-
-```bash
-eval "$(terraform output -raw psql_command)"
-```
-
-The Flexible Server administrator is not a PostgreSQL superuser, but on
-PostgreSQL 16 and newer it can create the definer role with `BYPASSRLS`.
-
-### 5. Install (per deployment)
+### 2. Install (per deployment)
 
 Install the chart, version 3.1.4 or later, into the deployment's namespace,
-with the deployment name as the release name, using the rendered values file. For the chart reference and
-the registry login, follow step 7 of the
+with the deployment name as the release name, using the rendered values file.
+For the chart reference and the registry login, follow step 7 of the
 [deployment guide](https://sema4.ai/docs/v3/deploy/azure-aks).
 Terraform prints the command with the release, namespace, kube context and
 values file already filled in:
 
 ```bash
+eval "$(terraform output -raw aks_get_credentials_command)"
+DEPLOYMENT=sema4ai
 terraform output -json helm_install_commands | jq -r --arg d "$DEPLOYMENT" '.[$d]'
 ```
 
@@ -247,9 +219,13 @@ Expect the VFS and sandbox Pods to sit in `ContainerCreating` for a few
 minutes on a first install, until the `data-root` Pod has claimed, formatted
 and mounted the data root.
 
-### 6. Verify
+### 3. Verify
 
 ```bash
+# The sandbox runtime Terraform installed: both return an object
+kubectl get runtimeclass kata-clh
+kubectl get nodes -l katacontainers.io/kata-runtime=true
+
 kubectl -n $DEPLOYMENT get pods
 
 # The data root: a Bound claim, and a log ending in "data root ready"
@@ -295,7 +271,7 @@ az storage account network-rule remove --account-name "$ACCOUNT" --resource-grou
 Listing needs a data role on the container for your own account (for example
 Storage Blob Data Reader).
 
-### 7. Back up the encryption keys
+### 4. Back up the encryption keys
 
 Each rendered values file holds two keyrings, `api.config.secretsKeys` and
 `api.config.projectPortabilityKeys`, that encrypt the credentials the platform
@@ -428,19 +404,20 @@ The defaults favor a quick, destroyable trial. Tighten them before production:
   credential boundary, give each deployment its own identity, and scope its
   role assignment to its prefix with an ABAC condition or to a container of
   its own.
-- **Secrets on disk and in state.** The rendered values files (0600,
-  gitignored) and the Terraform state hold the database passwords, the OIDC
-  client secrets, and the encryption keys. Restrict who can read state, keep
-  the values files off shared machines, and treat any CI job that runs
-  `terraform output -raw` on the sensitive outputs as handling cleartext
-  secrets.
+- **Secrets on disk, in state, and in the cluster.** The rendered values
+  files (0600, gitignored) and the Terraform state hold the database
+  passwords, the OIDC client secrets, and the encryption keys. The Secrets in
+  the `sema4ai-database-setup` namespace hold the PostgreSQL administrator
+  password and each deployment's role passwords, for the Jobs that create the
+  databases. Restrict who can read state and that namespace, and keep the
+  values files off shared machines.
 - **Entra ID client secrets expire.** The provider defaults them to two
   years, and nothing rotates them; see the comment in `modules/entra-app`.
-- **Cluster access.** The kubernetes provider authenticates with the cluster's
-  local admin certificate, and the API server has a public endpoint.
+- **Cluster access.** The kubernetes and helm providers authenticate with the
+  cluster's local admin certificate, and the API server has a public endpoint.
   Entra-only cluster access with local accounts disabled, and authorized IP
   ranges or a private cluster, are the production posture; both require
-  reconfiguring that provider.
+  reconfiguring those providers.
 - **Control plane tier.** The Free tier has no API server SLA; the Standard
   tier does. The node itself remains a single point of failure: this release
   runs on exactly one node.
@@ -452,17 +429,15 @@ The defaults favor a quick, destroyable trial. Tighten them before production:
 # its blobs under the shared container stay.
 helm uninstall "$DEPLOYMENT" -n "$DEPLOYMENT"
 
-# The sandbox runtime
-helm uninstall kata-deploy -n kube-system
-
-# Everything (cluster, database, storage, Key Vault, Front Door, Entra apps)
+# Everything else (sandbox runtime, cluster, database, storage, Key Vault,
+# Front Door, Entra apps). Uninstall every deployment first.
 terraform destroy
 ```
 
 Removing a deployment from `deployment_ids` and applying deletes its
 namespace, federated credential, Front Door endpoint, Entra ID app
-registration and Key Vault key, and **destroys its generated encryption keys**
-(step 7). Its database, roles and blobs are not touched: drop or empty them
+registration, Key Vault key and database setup Job, and **destroys its
+generated encryption keys** (step 4). Its database, roles and blobs are not touched: drop or empty them
 yourself if you mean to, because re-adding the same name points a new
 deployment, with new keys, at the old objects.
 
@@ -475,18 +450,22 @@ deployment, with new keys, at the old objects.
 ├── main.tf                   # resource group, network, PostgreSQL, AKS, version check
 ├── front-door.tf             # Front Door profile, an endpoint per deployment, origin NSG
 ├── gateway.tf                # the cluster's one Gateway, the Front Door origin
+├── sandbox-runtime.tf        # the /dev/kvm check, then Kata Containers
 ├── deployments.tf            # blob store, identity, Key Vault; per deployment: namespace,
 │                             #   service account, federated credential, Entra app, keys,
 │                             #   rendered values
-├── outputs.tf
+├── databases.tf              # per deployment: the Job that creates its database and roles
+├── outputs.tf                # only what this README uses
 ├── terraform.tfvars.example
 ├── tests/
 │   └── plan.tftest.hcl       # offline plan checks (mock providers): terraform test
 ├── templates/
-│   └── values.yaml.tftpl     # Helm values template (one rendered file per deployment)
+│   ├── values.yaml.tftpl     # Helm values template (one rendered file per deployment)
+│   └── database.sql.tftpl    # a deployment's database and roles (idempotent)
 ├── rendered/                 # generated values-<deployment>.yaml (gitignored, 0600)
 ├── k8s/
-│   └── kvm-check.yaml        # node check: /dev/kvm, vmx, containerd socket
+│   └── kvm-check.yaml        # node check: /dev/kvm, vmx, containerd socket (run by
+│                             #   Terraform, or by hand on another cluster)
 └── modules/
     ├── aks/                  # cluster, node pool, OIDC issuer, Gateway API (application routing)
     ├── networking/           # virtual network, node subnet, delegated database subnet
