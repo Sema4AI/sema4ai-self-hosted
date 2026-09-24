@@ -26,10 +26,10 @@ locals {
       database       = "s4_${replace(name, "-", "_")}"
       data_root_path = "/var/lib/blockparty/${name}"
       # The public hostname is the deployment's Front Door endpoint, generated
-      # by Azure and only known after an apply. It is both the Ingress host
-      # rule NGINX matches on and, as the values file's applicationUrl, the
-      # origin the chart derives every URL the application hands a browser
-      # from.
+      # by Azure and only known after an apply. It is both the hostname of the
+      # HTTPRoute the chart renders, which the Gateway matches on, and, as the
+      # values file's applicationUrl, the origin the chart derives every URL
+      # the application hands a browser from.
       host = azurerm_cdn_frontdoor_endpoint.deployment[name].host_name
       url  = "https://${azurerm_cdn_frontdoor_endpoint.deployment[name].host_name}"
     }
@@ -120,6 +120,8 @@ module "app_namespace" {
 
   namespace       = each.key
   service_account = each.value.service_account
+  # app.kubernetes.io/part-of is also what lets the chart's HTTPRoute attach:
+  # the Gateway (gateway.tf) admits routes only from namespaces carrying it.
   labels = {
     "app.kubernetes.io/managed-by" = "terraform"
     "app.kubernetes.io/part-of"    = "sema4ai"
@@ -191,9 +193,9 @@ resource "random_password" "portability_key" {
 }
 
 # Per-deployment Helm values: the minimum the chart needs on this cluster.
-# Every key is a credential, a name-derived or shared-infrastructure fact, or
-# one of the Azure resource identifiers the chart derives its azure platform
-# conventions from.
+# Every key is a credential, a name-derived or shared-infrastructure fact, one
+# of the Azure resource identifiers the chart derives its azure platform
+# conventions from, or the Gateway its HTTPRoute attaches to.
 #
 # Contains database passwords, encryption keys and the OIDC client secret, so
 # the file is owner-only (0600) and rendered/ is gitignored.
@@ -222,8 +224,10 @@ resource "local_sensitive_file" "values" {
     workload_client_id   = azurerm_user_assigned_identity.workload.client_id
     key_vault_key_url    = module.key_vault.key_urls[each.key]
 
-    application_url = each.value.url
-    ingress_host    = each.value.host
+    application_url   = each.value.url
+    host              = each.value.host
+    gateway_name      = local.gateway_name
+    gateway_namespace = local.gateway_namespace
 
     oidc_server        = try(module.entra_app[each.key].issuer, "REPLACE_ME")
     oidc_client_id     = try(module.entra_app[each.key].client_id, "REPLACE_ME")

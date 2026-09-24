@@ -6,6 +6,12 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.45"
     }
+    # Only for the cluster's Gateway API settings (modules/aks), which the
+    # azurerm provider cannot yet express.
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.12"
+    }
     azuread = {
       source  = "hashicorp/azuread"
       version = "~> 3.0"
@@ -37,6 +43,10 @@ provider "azurerm" {
   subscription_id = var.subscription_id
 }
 
+provider "azapi" {
+  subscription_id = var.subscription_id
+}
+
 provider "azuread" {
   # Tenant is inherited from the Azure CLI session that runs `terraform apply`.
 }
@@ -44,9 +54,14 @@ provider "azuread" {
 # Configured from the AKS cluster this same configuration creates, with the
 # cluster's local admin certificate — no `az aks get-credentials` and no Entra
 # login during apply. It owns the only in-cluster resources Terraform is
-# responsible for: each deployment's namespace and service account.
-# Everything else in the cluster (the sandbox runtime, the application
-# releases) is installed by the operator with helm.
+# responsible for: the cluster's Gateway, and each deployment's namespace and
+# service account. Everything else in the cluster (the sandbox runtime, the
+# application releases and the HTTPRoutes they render) is installed by the
+# operator with helm.
+#
+# The Gateway is a kubernetes_manifest resource, which reads the cluster and
+# the Gateway API CRDs at plan time, so a new cluster is applied with
+# `-target=module.aks` first (README.md, step 1).
 #
 # The API server endpoint must be reachable from wherever Terraform runs; the
 # cluster is created with a public endpoint.

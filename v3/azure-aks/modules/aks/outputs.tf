@@ -19,7 +19,7 @@ output "oidc_issuer_url" {
 
 output "node_resource_group" {
   value       = azurerm_kubernetes_cluster.this.node_resource_group
-  description = "Resource group AKS creates the node VM, its disks (including the data-root volumes) and the ingress load balancer in."
+  description = "Resource group AKS creates the node VM, its disks (including the data-root volumes) and the Gateway's load balancer in."
 }
 
 # Credentials for the kubernetes provider in the root module. Local

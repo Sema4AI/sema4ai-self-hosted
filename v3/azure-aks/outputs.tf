@@ -31,7 +31,12 @@ output "aks_oidc_issuer_url" {
 
 output "aks_node_resource_group" {
   value       = module.aks.node_resource_group
-  description = "Resource group AKS creates the node VM, its disks (including the data-root volumes) and the ingress load balancer in."
+  description = "Resource group AKS creates the node VM, its disks (including the data-root volumes) and the Gateway's load balancer in."
+}
+
+output "gateway_ip_command" {
+  value       = "kubectl -n ${local.gateway_namespace} get gateway ${local.gateway_name} -o jsonpath='{.status.addresses[0].value}'"
+  description = "Prints the public IP of the cluster's Gateway once it is programmed: what front_door_origin reads back off the node resource group."
 }
 
 output "sandbox_runtime_check_commands" {
@@ -47,17 +52,17 @@ output "sandbox_runtime_check_commands" {
 # ---------------------------------------------------------------------------
 
 output "front_door_endpoints" {
-  description = "The public URL of every deployment: an Azure-generated Front Door endpoint with a Microsoft-managed certificate. These are the applicationUrl and ingress host in the rendered values files, and the redirect URIs of the Entra ID app registrations."
+  description = "The public URL of every deployment: an Azure-generated Front Door endpoint with a Microsoft-managed certificate. These are the applicationUrl and httpRoute hostname in the rendered values files, and the redirect URIs of the Entra ID app registrations."
   value       = { for name, d in local.deployments : name => d.url }
 }
 
 output "front_door_origin" {
-  description = "The origin every endpoint forwards to: the ingress controller's public IP, reached over HTTP and admitted only from the AzureFrontDoor.Backend service tag. Null means no Ingress exists yet, so the origin and routes were skipped: install a deployment, then apply again."
+  description = "The origin every endpoint forwards to: the public IP of the cluster's Gateway, reached over HTTP and admitted only from the AzureFrontDoor.Backend service tag. Null means the Gateway had no IP yet when this apply was planned, so the origin and routes were skipped: wait for the Gateway to be programmed, then apply again."
   value       = local.ingress_public_ip
 }
 
 output "front_door_id" {
-  description = "This Front Door profile's ID, sent as the X-Azure-FDID header on every request to the origin. Checking it at the ingress is what would narrow the origin from every Front Door to this one (see README.md)."
+  description = "This Front Door profile's ID, sent as the X-Azure-FDID header on every request to the origin. Checking it at the Gateway is what would narrow the origin from every Front Door to this one (see README.md)."
   value       = azurerm_cdn_frontdoor_profile.this.resource_guid
 }
 

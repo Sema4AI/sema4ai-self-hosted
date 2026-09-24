@@ -5,17 +5,17 @@
 # the cluster. Each deployment is reached at an Azure-generated Front Door
 # endpoint hostname (<endpoint>-<hash>.z01.azurefd.net) whose TLS certificate
 # Microsoft issues, serves and rotates. The hostnames are only known after an
-# apply, so everything downstream that needs one — the Ingress host rule, the
+# apply, so everything downstream that needs one — the HTTPRoute hostname, the
 # values file's applicationUrl, the Entra ID redirect URI — reads it back off
 # these resources rather than off a variable.
 #
-# The hop from the Front Door edge to the cluster is plain HTTP. The ingress
-# controller has no certificate a public CA would sign, and Front Door rejects
-# an origin whose certificate does not chain to a trusted root. The origin is
-# therefore restricted to Front Door by the network security group below. If
-# an unencrypted edge-to-origin hop is not acceptable, the answer is the
-# Premium SKU with Private Link to an internal load balancer, or TLS at the
-# ingress on a hostname of your own; see README.md.
+# The hop from the Front Door edge to the cluster is plain HTTP. The Gateway
+# has no certificate a public CA would sign, and Front Door rejects an origin
+# whose certificate does not chain to a trusted root. The origin is therefore
+# restricted to Front Door by the network security group below. If an
+# unencrypted edge-to-origin hop is not acceptable, the answer is the Premium
+# SKU with Private Link to an internal load balancer, or TLS at the Gateway on
+# a hostname of your own; see README.md.
 # ---------------------------------------------------------------------------
 
 resource "azurerm_cdn_frontdoor_profile" "this" {
@@ -24,22 +24,22 @@ resource "azurerm_cdn_frontdoor_profile" "this" {
   sku_name            = "Standard_AzureFrontDoor"
 
   # The ceiling on a single origin response; 240s is the maximum Front Door
-  # accepts. The Ingress asks NGINX for 3600s, but past four minutes on one
-  # non-WebSocket response the edge returns 504 regardless. WebSocket
+  # accepts. The Gateway sets no request timeout of its own, so past four
+  # minutes on one non-WebSocket response the edge returns 504. WebSocket
   # connections are governed by Front Door's own limits instead.
   response_timeout_seconds = 240
 }
 
-# The ingress controller's public IP: the one AKS allocates in the node
-# resource group for the application routing add-on's `nginx` Service in
-# `app-routing-system`, and tags with that Service's name. Should the tag
-# ever not match, the lookup falls back to the `kubernetes-` name prefix AKS
-# gives every Service IP it allocates.
+# The Gateway's public IP: the one AKS allocates in the node resource group
+# for the Service the add-on generates for the Gateway (gateway.tf), and tags
+# with that Service's namespace and name (k8s-azure-service). The tag, not the
+# name, singles it out: AKS names every Service IP after a hash of the
+# Service's UID, with the same kubernetes- prefix.
 #
-# The IP does not exist before the cluster does, and possibly not before the
-# cluster's first Ingress, so the origin, the routes and the network security
-# group below are created on the first apply that finds it (see README.md for
-# the two-pass apply).
+# The IP does not exist until the Gateway is programmed, a minute or so after
+# the apply that creates it, so the origin, the routes and the network
+# security group below are created on the first apply that finds it
+# (README.md, step 1).
 #
 # The lookup must be answerable at plan time, because it decides how many of
 # those resources there are. So it is a subscription-wide query with constant
@@ -56,14 +56,10 @@ locals {
     for r in data.azurerm_resources.public_ips.resources : r
     if lower(r.resource_group_name) == lower(local.node_resource_group)
   ]
-  ingress_ip_names_by_tag = [
+  ingress_ip_names = [
     for r in local.node_public_ips : r.name
-    if lookup(coalesce(r.tags, {}), "k8s-azure-service", "") == "app-routing-system/nginx"
+    if lookup(coalesce(r.tags, {}), "k8s-azure-service", "") == local.gateway_service
   ]
-  ingress_ip_names_by_prefix = [
-    for r in local.node_public_ips : r.name if startswith(r.name, "kubernetes-")
-  ]
-  ingress_ip_names = length(local.ingress_ip_names_by_tag) > 0 ? local.ingress_ip_names_by_tag : local.ingress_ip_names_by_prefix
 }
 
 data "azurerm_public_ip" "ingress" {
@@ -84,9 +80,9 @@ resource "azurerm_cdn_frontdoor_origin_group" "ingress" {
   load_balancing {}
 
   # No health_probe block, deliberately. A probe arrives at the origin with
-  # the origin's own IP as its Host, matches no Ingress rule, and is answered
-  # by NGINX's default backend with a 404, which would take the only origin
-  # out of rotation and fail every request. Front Door allows probing to be
+  # the origin's own IP as its Host, matches no HTTPRoute hostname, and the
+  # Gateway answers it 404, which would take the only origin out of rotation
+  # and fail every request. Front Door allows probing to be
   # off only for a single origin in a single origin group, which is exactly
   # this shape.
 }
@@ -108,16 +104,17 @@ resource "azurerm_cdn_frontdoor_origin" "ingress" {
 
   # origin_host_header is left unset on purpose: Front Door then forwards the
   # Host it received, which is the endpoint hostname the browser asked for.
-  # That is what lets one origin serve every endpoint below: NGINX matches
-  # each request to whichever deployment's Ingress declares that host.
+  # That is what lets one origin serve every endpoint below: the Gateway
+  # matches each request to whichever deployment's HTTPRoute declares that
+  # host.
   #
   # Only reached over HTTP, so the certificate check has nothing to check.
   certificate_name_check_enabled = false
 }
 
 # One endpoint per deployment. Each gets its own hostname and its own managed
-# certificate; they share the one origin, and are told apart at NGINX by the
-# Host header Front Door passes through.
+# certificate; they share the one origin, and are told apart at the Gateway by
+# the Host header Front Door passes through.
 resource "azurerm_cdn_frontdoor_endpoint" "deployment" {
   # Keyed off the input variable rather than local.deployments, which reads
   # host_name back off these endpoints; going through the local would be a
@@ -153,7 +150,7 @@ resource "azurerm_cdn_frontdoor_route" "deployment" {
 # Keep the origin private to Front Door.
 #
 # The node subnet has no network security group by default, which leaves the
-# ingress load balancer answering anyone who finds the IP, over HTTP, with
+# Gateway's load balancer answering anyone who finds the IP, over HTTP, with
 # none of the edge's TLS. This admits the AzureFrontDoor.Backend service tag
 # on port 80 and nothing else from the internet; Azure's default rules still
 # allow the virtual network and the load balancer's health probes, and egress
@@ -161,18 +158,19 @@ resource "azurerm_cdn_frontdoor_route" "deployment" {
 #
 # The tag covers every Front Door in Azure, not only this profile. Pinning it
 # to this profile means rejecting requests whose X-Azure-FDID header is not
-# this profile's ID (the front_door_id output) at NGINX; see README.md.
+# this profile's ID (the front_door_id output) at the Gateway; see README.md.
 #
-# The destination is the load balancer's public IP, not VirtualNetwork. The
-# ingress Service runs externalTrafficPolicy: Local, so AKS gives its load
-# balancing rules floating IP (Direct Server Return) and the packet arrives
-# at the node still addressed to the frontend IP: a VirtualNetwork
-# destination never matches it, and the default DenyAllInBound then drops
-# every request as a Front Door 504.
+# The destination is the load balancer's public IP, not VirtualNetwork. AKS
+# gives a Service's load balancing rules floating IP (Direct Server Return)
+# unless the Service opts out, so the packet arrives at the node still
+# addressed to the frontend IP: a VirtualNetwork destination never matches
+# it, and the default DenyAllInBound then drops every request as a Front Door
+# 504. The Gateway's Service also exposes Istio's status port (15021); nothing
+# here admits it from outside.
 # ---------------------------------------------------------------------------
 
 resource "azurerm_network_security_group" "ingress" {
-  # Named for a destination that does not exist until the ingress does.
+  # Named for a destination that does not exist until the Gateway does.
   count = local.ingress_public_ip == null ? 0 : 1
 
   name                = "nsg-${var.infra_id}-ingress"

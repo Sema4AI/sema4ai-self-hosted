@@ -19,8 +19,8 @@ and the install:
 **📖 [Deploy on Azure AKS](https://sema4.ai/docs/v3/deploy/azure-aks)**
 
 > **One deliberate difference from the guide: the public hostname.** The
-> guide has you pick a hostname on your own domain and terminate TLS at the
-> cluster's ingress with a certificate from Key Vault. This configuration
+> guide has you pick a hostname on your own domain and terminate TLS in the
+> cluster with a certificate from Key Vault. This configuration
 > instead serves each deployment at an **Azure-generated Front Door
 > hostname** (`<deployment>-<hash>.z01.azurefd.net`) with a certificate
 > Microsoft issues and rotates, so a proof of concept needs no domain, DNS
@@ -44,7 +44,7 @@ and the install:
 - **The database and roles** for each deployment, created with the SQL in its
   rendered values file (step 4 below), and operating the PostgreSQL server.
 - **The encryption keys** in each rendered values file: backing them up
-  outside the cluster (step 8 below).
+  outside the cluster (step 7 below).
 - An **identity provider**, unless you let this configuration create an Entra
   ID app registration per deployment.
 
@@ -52,9 +52,9 @@ and the install:
 
 | Resource | Role |
 | --- | --- |
-| **Resource groups** `rg-<infra_id>` and `rg-<infra_id>-aks-nodes` | The first holds everything below; AKS creates the second for the node VM, its disks, and the ingress load balancer. |
+| **Resource groups** `rg-<infra_id>` and `rg-<infra_id>-aks-nodes` | The first holds everything below; AKS creates the second for the node VM, its disks, and the Gateway's load balancer. |
 | **Virtual network** | A node subnet (with the `Microsoft.Storage` and `Microsoft.KeyVault` service endpoints) and a subnet delegated to PostgreSQL. |
-| **AKS cluster** (Free tier) | Kubernetes 1.36+, OIDC issuer and workload identity enabled, Azure CNI Overlay, and the application routing add-on (managed NGINX) for ingress. |
+| **AKS cluster** (Free tier) | Kubernetes 1.36+, OIDC issuer and workload identity enabled, Azure CNI Overlay, and ingress through the Kubernetes Gateway API: the managed Gateway API CRDs and the application routing add-on's Gateway API implementation (`approuting-istio`), with the add-on's retired NGINX off. |
 | **Node pool** (1 × `Standard_D32s_v5`, one zone) | 32 vCPU / 128 GiB with nested virtualization. Carries the whole application *and* every concurrent sandbox run. No autoscaler. |
 | **PostgreSQL Flexible Server 17** | Application data, shared by every deployment (a database and three roles each). Private access only. `pgcrypto` and `citext` allow-listed. |
 | **Storage account + container** | The durable blob store, shared by every deployment under its own key prefix. Firewalled to the node subnet. |
@@ -62,7 +62,8 @@ and the install:
 | **User-assigned managed identity** | Storage Blob Data Contributor on the container and Key Vault Crypto User on each deployment's key, and nothing else. Federated with each deployment's service account. |
 | **Entra ID app registrations** (optional) | The OIDC client for sign-in, one per deployment. |
 | **Front Door** (Standard) | One endpoint per deployment: the public edge and the only place TLS is terminated. |
-| **Network security group** | Admits only Front Door to the ingress load balancer. |
+| **Network security group** | Admits only Front Door to the Gateway's load balancer. |
+| **Gateway** (in the cluster) | One for the cluster, shared by every deployment: a single HTTP listener, the Front Door origin. Each deployment's release attaches an HTTPRoute to it. |
 | **Per deployment, in the cluster** | A namespace and a service account annotated with the managed identity's client ID. |
 | **Per deployment, on disk** | `rendered/values-<deployment>.yaml`: every value filled in, and the database SQL in its header. |
 
@@ -83,9 +84,9 @@ it), the sandbox runtime (step 3), and the databases (step 4).
                             │  HTTP, admitted only from AzureFrontDoor.Backend
                             ▼
               ┌───────────────────────────┐
-              │ Public load balancer      │  One for the cluster, from the application
-              │ + managed NGINX           │  routing add-on. Each deployment adds a host
-              └─────────────┬─────────────┘  rule, matched on the endpoint hostname
+              │ Public load balancer      │  One Gateway for the cluster (approuting-istio).
+              │ + Gateway                 │  Each deployment adds an HTTPRoute, matched on
+              └─────────────┬─────────────┘  the endpoint hostname
                             ▼
    ┌──────────────────────────────────────────────────────────────────┐
    │ AKS: ONE node, one zone, no autoscaler                           │
@@ -141,11 +142,23 @@ is local, and it holds every generated secret.
 
 ### 1. Apply
 
+A new cluster applies in three passes:
+
 ```bash
 cp terraform.tfvars.example terraform.tfvars   # then edit it
 terraform init
-terraform apply
+terraform apply -target=module.aks   # the cluster, with the Gateway API turned on
+terraform apply                      # everything else, including the Gateway
+terraform apply                      # a minute later: Front Door's origin
 ```
+
+The Gateway is a Kubernetes object that Terraform can plan only once the
+cluster and its Gateway API definitions exist, so the cluster goes first. Front
+Door's origin is the Gateway's public IP, which AKS allocates a minute or so
+after the Gateway is created, so the last pass picks it up:
+`terraform output front_door_origin` is no longer `null`. If it still is, wait
+until `eval "$(terraform output -raw gateway_ip_command)"` prints an address,
+and apply again. Until the origin exists, every endpoint answers 404.
 
 If the apply fails creating the Key Vault keys with `403 Forbidden`, run it
 again: Terraform grants itself the key-management role on the vault it just
@@ -213,8 +226,8 @@ PostgreSQL 16 and newer it can create the definer role with `BYPASSRLS`.
 
 ### 5. Install (per deployment)
 
-Install the chart into the deployment's namespace, with the deployment name as
-the release name, using the rendered values file. For the chart reference and
+Install the chart, version 3.1.4 or later, into the deployment's namespace,
+with the deployment name as the release name, using the rendered values file. For the chart reference and
 the registry login, follow step 7 of the
 [deployment guide](https://sema4.ai/docs/v3/deploy/azure-aks).
 Terraform prints the command with the release, namespace, kube context and
@@ -232,20 +245,7 @@ Expect the VFS and sandbox Pods to sit in `ContainerCreating` for a few
 minutes on a first install, until the `data-root` Pod has claimed, formatted
 and mounted the data root.
 
-### 6. Apply again (new cluster only)
-
-```bash
-terraform apply
-terraform output front_door_origin     # no longer null
-```
-
-Front Door's origin is the ingress controller's public IP, which may not exist
-until the cluster has its first Ingress. When the first apply found no IP,
-`front_door_origin` was `null` and the origin, the routes and the network
-security group were skipped, and every endpoint answered 404; this pass
-creates them. Later deployments on the same cluster need no second apply.
-
-### 7. Verify
+### 6. Verify
 
 ```bash
 kubectl -n $DEPLOYMENT get pods
@@ -258,6 +258,11 @@ kubectl -n $DEPLOYMENT logs daemonset/$DEPLOYMENT-blockparty-data-root -c data-r
 # means the annotation or the federated credential is missing, and blob
 # operations will fail with 403 on first use.
 kubectl -n $DEPLOYMENT describe pod -l app.kubernetes.io/component=vfs | grep AZURE_
+
+# The deployment's HTTPRoute, accepted by the Gateway with every backend
+# resolved: both conditions True
+kubectl -n $DEPLOYMENT get httproute $DEPLOYMENT-blockparty \
+  -o jsonpath='{range .status.parents[0].conditions[*]}{.type}={.status} {end}{"\n"}'
 
 # The deployment through the edge
 curl -fsS -o /dev/null -w '%{http_code}\n' \
@@ -288,7 +293,7 @@ az storage account network-rule remove --account-name "$ACCOUNT" --resource-grou
 Listing needs a data role on the container for your own account (for example
 Storage Blob Data Reader).
 
-### 8. Back up the encryption keys
+### 7. Back up the encryption keys
 
 Each rendered values file holds two keyrings, `api.config.secretsKeys` and
 `api.config.projectPortabilityKeys`, that encrypt the credentials the platform
@@ -306,44 +311,58 @@ becomes unreadable.
 Every deployment is reached at its own Front Door endpoint, and Front Door
 terminates TLS there on a certificate Microsoft issues, serves and rotates.
 There is no domain to own, no DNS record to create, and no certificate in the
-cluster. The hostnames exist only after an apply, so the values files' host
-and `applicationUrl`, and the Entra ID redirect URIs, are read back off the
-endpoints; `terraform output front_door_endpoints` lists them.
+cluster. The hostnames exist only after an apply, so the values files'
+`applicationUrl` and HTTPRoute hostname, and the Entra ID redirect URIs, are
+read back off the endpoints; `terraform output front_door_endpoints` lists
+them.
 
-Behind the edge, the application routing add-on runs one managed NGINX behind
-one public load balancer for the whole cluster, and each deployment's Ingress
-adds a host rule to it. All endpoints share a single Front Door origin that
-forwards the Host header unchanged, so NGINX matches each request to the right
-deployment.
+Behind the edge is the **Kubernetes Gateway API**. The application routing
+add-on's managed NGINX is retired: Microsoft supports it only
+[through November 2026](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api)
+and names the add-on's Gateway API implementation as its successor. The
+cluster runs that implementation instead, with one Gateway (`gateway.tf`)
+behind one public load balancer for the whole cluster. Each deployment's
+release renders an HTTPRoute onto it, with the same paths and Services as the
+application's Ingress. All endpoints share a single Front Door origin that
+forwards the Host header unchanged, so the Gateway matches each request to the
+deployment whose HTTPRoute claims that hostname.
 
 What this shape trades away:
 
 - **The edge-to-cluster hop is plain HTTP.** Front Door only accepts an HTTPS
-  origin whose certificate chains to a public root, and the ingress has none.
+  origin whose certificate chains to a public root, and the Gateway has none.
   The network security group therefore admits port 80 only from the
   `AzureFrontDoor.Backend` service tag.
 - **The service tag covers every Front Door, not only yours.** Anyone who
   learns the origin IP can reach it through a Front Door profile of their own.
   Closing that means rejecting requests whose `X-Azure-FDID` header is not
-  this profile's ID (`terraform output front_door_id`), with an NGINX rule on
-  the ingress controller.
+  this profile's ID (`terraform output front_door_id`), with a header match on
+  each deployment's route.
 - **Front Door's limits become the application's.** A single non-WebSocket
-  response is capped at 240 seconds at the edge, whatever NGINX allows, and
-  WebSocket connections are subject to Front Door's own idle and duration
-  limits.
+  response is capped at 240 seconds at the edge, and WebSocket connections are
+  subject to Front Door's own idle and duration limits. The Gateway adds no
+  timeout of its own.
+- **No upload size limit in the cluster.** This Gateway API implementation
+  [cannot set a request body size limit](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api#limitations),
+  so a request body reaches the application at whatever size it arrives.
 
 For production, replace it with the shape the deployment guide describes: a
-hostname on your own domain, and TLS at the ingress with a certificate from
-Key Vault (the `kubernetes.azure.com/tls-cert-keyvault-uri` annotation and a
-`tls` block in the values file, with the vault attached to the add-on). That
-also lets you keep the ingress private with an internal load balancer. Remove
-the Front Door resources in `front-door.tf` when you do, including the network
-security group: it admits only Front Door, on port 80, so it would block
-HTTPS clients reaching a public ingress directly. To keep
-Front Door instead, the Premium SKU with Private Link to an internal load
-balancer removes the public origin, and a custom domain on the endpoint
-replaces the generated hostname (set it as `applicationUrl`, `ingress.host`
-and the redirect URI).
+hostname on your own domain, and TLS in the cluster with a certificate from
+Key Vault. On the Gateway API that is an HTTPS listener on the Gateway whose
+TLS options name the certificate
+(`kubernetes.azure.com/tls-cert-keyvault-uri`) and a service account bound to
+an identity with Key Vault Secrets User on the vault
+(`kubernetes.azure.com/tls-cert-service-account`), with the Key Vault
+secrets provider add-on enabled; see
+[Configure Azure DNS and TLS with the application routing Gateway API implementation](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls).
+That also lets you keep the Gateway private with an internal load balancer.
+Remove the Front Door resources in `front-door.tf` when you do, including the
+network security group: it admits only Front Door, on port 80, so it would
+block HTTPS clients reaching a public Gateway directly. To keep Front Door
+instead, the Premium SKU with Private Link to an internal load balancer
+removes the public origin, and a custom domain on the endpoint replaces the
+generated hostname (set it as `applicationUrl`, the HTTPRoute hostname and the
+redirect URI).
 
 ## The data root
 
@@ -368,7 +387,7 @@ blob store.
 
 The defaults favor a quick, destroyable trial. Tighten them before production:
 
-- **Ingress.** Move to your own hostname and TLS at the ingress, or restrict
+- **Ingress.** Move to your own hostname and TLS at the Gateway, or restrict
   the origin to this Front Door profile; see [Ingress](#ingress).
 - **Key Vault purge protection.** Set `key_vault_purge_protection = true`, so
   a deleted key stays recoverable for the retention window. It is
@@ -422,7 +441,7 @@ terraform destroy
 Removing a deployment from `deployment_ids` and applying deletes its
 namespace, federated credential, Front Door endpoint, Entra ID app
 registration and Key Vault key, and **destroys its generated encryption keys**
-(step 8). Its database, roles and blobs are not touched: drop or empty them
+(step 7). Its database, roles and blobs are not touched: drop or empty them
 yourself if you mean to, because re-adding the same name points a new
 deployment, with new keys, at the old objects.
 
@@ -434,6 +453,7 @@ deployment, with new keys, at the old objects.
 ├── variables.tf              # inputs, documented inline
 ├── main.tf                   # resource group, network, PostgreSQL, AKS, version check
 ├── front-door.tf             # Front Door profile, an endpoint per deployment, origin NSG
+├── gateway.tf                # the cluster's one Gateway, the Front Door origin
 ├── deployments.tf            # blob store, identity, Key Vault; per deployment: namespace,
 │                             #   service account, federated credential, Entra app, keys,
 │                             #   rendered values
@@ -447,7 +467,7 @@ deployment, with new keys, at the old objects.
 ├── k8s/
 │   └── kvm-check.yaml        # node check: /dev/kvm, vmx, containerd socket
 └── modules/
-    ├── aks/                  # cluster, node pool, OIDC issuer, application routing add-on
+    ├── aks/                  # cluster, node pool, OIDC issuer, Gateway API (application routing)
     ├── networking/           # virtual network, node subnet, delegated database subnet
     ├── postgres/             # Flexible Server, private DNS zone, server parameters
     ├── blob-store/           # storage account + container, firewall

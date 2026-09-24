@@ -1,5 +1,5 @@
 # Helm values for the Sema4.ai self-hosted deployment "${deployment_id}" on
-# Azure AKS. Requires application version 3.1.2 or later.
+# Azure AKS. Requires application version 3.1.4 or later.
 #
 # Rendered by Terraform from templates/values.yaml.tftpl, one file per
 # deployment, and overwritten on every apply: edit the template, not this
@@ -73,10 +73,6 @@
 # --create-namespace. Use the same value as the release name: the chart
 # derives its resource names and the data root path from it.
 #
-# On a new cluster, run `terraform apply` again once the install has created
-# its Ingress: that pass gives the Front Door endpoint its origin. Until then
-# the hostname below answers 404.
-#
 # After install, `kubectl -n ${deployment_id} get pvc -l app.kubernetes.io/component=data-root`
 # shows one Bound claim, and
 # `kubectl -n ${deployment_id} logs daemonset/${chart_fullname}-data-root -c data-root-manager`
@@ -96,9 +92,9 @@
 # The address this deployment is reached at: its Front Door endpoint. From it
 # the chart derives every URL the platform needs about itself (the sign-in
 # callback, the allowed browser origin, and the webhook callback URLs), and
-# the Entra ID app registration holds the same callback. ingress.host below
-# repeats the hostname: Front Door forwards it as the Host header, and NGINX
-# matches the Ingress rule on it.
+# the Entra ID app registration holds the same callback. httpRoute.hostnames
+# below repeats the hostname: Front Door forwards it as the Host header, and
+# the Gateway matches the route on it.
 applicationUrl: '${application_url}'
 
 # Terraform-created service account, annotated with the client ID of the
@@ -138,7 +134,8 @@ postgres:
 #     and on Premium SSD a larger disk is also a faster one);
 #   - the sandbox wiring for AKS: the Kata runtime from STEP 1, reached through
 #     the node's containerd, with the release installing no Kata of its own;
-#   - the ingress class of the AKS application routing add-on.
+#   - no Ingress: the application routing add-on's NGINX is retired, and the
+#     release is served by the HTTPRoute below instead.
 infrastructure:
   platform: azure
   azure:
@@ -178,22 +175,21 @@ api:
         clientId: '${oidc_client_id}'
         clientSecret: '${oidc_client_secret}'
 
-# The class is the chart's to derive (webapprouting.kubernetes.azure.com, the
-# application routing add-on's managed NGINX), so only the host and the NGINX
-# tuning are set here. The add-on runs one load balancer for the cluster; this
-# deployment only adds a host rule to it.
+# Routing: an HTTPRoute the chart renders, with the same paths and Services as
+# its Ingress, attached to the cluster's one Gateway, which the application
+# routing add-on serves through its Gateway API implementation. The Gateway is
+# shared by every deployment and has no hostname of its own, so the route
+# claims this deployment's Front Door hostname, the Host header Front Door
+# forwards.
 #
-# There is no tls block: Front Door terminates TLS at the edge with a
-# certificate Microsoft issues and rotates, and reaches this Ingress over
-# plain HTTP. ssl-redirect is off for the same reason: NGINX would otherwise
-# answer Front Door's HTTP request with a redirect back to the URL it just
-# came from. The body size admits file uploads up to the platform's 200 MiB
-# limit, and the timeouts keep websocket and streaming connections open for
-# the length of an agent run, within Front Door's own limits (see README.md).
-ingress:
-  host: '${ingress_host}'
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: 'false'
-    nginx.ingress.kubernetes.io/proxy-body-size: 200m
-    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
-    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+# Front Door terminates TLS at the edge with a certificate Microsoft issues
+# and rotates, and reaches the Gateway over plain HTTP. The Gateway sets no
+# request timeout, so Front Door's 240-second response ceiling and WebSocket
+# limits are the ones that apply, and no upload size limit (see README.md).
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: ${gateway_name}
+      namespace: ${gateway_namespace}
+  hostnames:
+    - '${host}'

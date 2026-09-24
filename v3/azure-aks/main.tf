@@ -12,8 +12,8 @@ locals {
   resource_group_name     = azurerm_resource_group.this.name
   resource_group_location = azurerm_resource_group.this.location
 
-  # Where AKS creates the node VM, its disks and the ingress load balancer.
-  # Named here rather than left to AKS, so front-door.tf can find the ingress
+  # Where AKS creates the node VM, its disks and the Gateway's load balancer.
+  # Named here rather than left to AKS, so front-door.tf can find the Gateway's
   # IP in it on a plan that runs before the cluster exists.
   node_resource_group = "rg-${var.infra_id}-aks-nodes"
 }
