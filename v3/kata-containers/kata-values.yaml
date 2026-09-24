@@ -12,7 +12,7 @@ shims:
       snapshotter: ""
     dropIn: |
       [hypervisor.clh]
-      virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts", "--xattr"]
+      virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts", "--xattr", "--inode-file-handles=never"]
       kernel_params = "cgroup_no_v1=all systemd.unified_cgroup_hierarchy=1"
       enable_annotations = []
       [runtime]
